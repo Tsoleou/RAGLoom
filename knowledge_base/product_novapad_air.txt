@@ -1,0 +1,23 @@
+[PRODUCT SHEET: NOVAPAD AIR]
+Tagline: 極致輕薄隨行 — 1.3kg OLED 超長續航日用筆電
+
+1. Core Specs (核心規格):
+   - Model: NovaPad Air 14
+   - CPU: Intel Core Ultra 7 155U
+   - GPU: Intel Arc Graphics (Integrated)
+   - RAM: 16GB LPDDR5 (Onboard)
+   - Storage: 512GB PCIe Gen4 SSD
+   - Weight: 1.3 kg
+   - Thickness: 13.9mm
+
+2. Unique Selling Points (獨家賣點):
+   - "AirFrame Magnesium Alloy": 鎂合金機身，全機重量不到 1.3kg，符合 MIL-STD-810H 防摔標準。
+   - "2.8K OLED 90Hz": 2880x1800 OLED 螢幕，90Hz 刷新率，100% DCI-P3，日常娛樂與學習清晰度極佳。
+   - "20hr Battery": 72Wh 電池搭配低功耗 U 系列 CPU，實測日常使用可達 20 小時。
+
+3. Target Audience (目標客群):
+   - 每天通勤的學生與上班族，需要超輕薄且電池續航強的全能型筆電。
+
+4. Connectivity (連線能力):
+   - 支援 Wi-Fi 7
+   - USB-C x2 (含充電) / USB-A x1 / 3.5mm 音訊

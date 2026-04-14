@@ -1,0 +1,24 @@
+[PRODUCT SHEET: STARFORGE PHANTOM]
+Tagline: 低調電競 — 辦公室也能用的隱形遊戲機
+
+1. Core Specs (核心規格):
+   - Model: StarForge Phantom
+   - CPU: Intel Core Ultra 5 125H
+   - GPU: NVIDIA GeForce RTX 4060 (8GB GDDR6)
+   - RAM: 16GB LPDDR5X (Onboard)
+   - Storage: 1TB PCIe Gen4 SSD
+   - Weight: 1.8 kg
+   - Thickness: 18.5mm
+
+2. Unique Selling Points (獨家賣點):
+   - "PhantomChill Vapor Chamber": 均熱板導熱覆蓋 CPU + GPU，輕薄機身下仍可持續釋放 100W 效能。
+   - "Stealth Matte Finish": 磨砂陽極氧化鋁外殼，辦公場合不顯電競感，防指紋塗層。
+   - "Silent Mode": 單鍵切換靜音模式，風扇轉速降至 <28dB，適合圖書館與會議室使用。
+
+3. Target Audience (目標客群):
+   - 需要辦公與遊戲兩用的上班族，或希望筆電外觀不張揚的玩家。
+
+4. Connectivity (連線能力):
+   - 支援 Wi-Fi 7
+   - 具備 Thunderbolt 4 連接埠
+   - USB-A x2 / HDMI 2.1

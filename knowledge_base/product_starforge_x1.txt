@@ -1,0 +1,21 @@
+[PRODUCT SHEET: STARFORGE X1]
+Tagline: 極致輕薄電競 — 1.7kg 的 Mini-LED 創作者筆電
+
+1. Core Specs (核心規格):
+   - Model: StarForge X1
+   - CPU: Intel Core Ultra 9 185H (AI Ready)
+   - GPU: NVIDIA GeForce RTX 4070 (8GB)
+   - RAM: 32GB LPDDR5X (Onboard)
+   - Weight: 僅 1.7 kg (極致輕薄)
+
+2. Unique Selling Points (獨家賣點):
+   - "Vortex Flow": 專利氣流導向技術，在輕薄機身內建立風道。
+   - "Mini-LED Display": 支援 HDR 1000，亮度高達 1000 nits，黑色更深邃。
+   - "Fingerprint Reader": 電源鍵整合指紋辨識，商務電競雙用。
+
+3. Target Audience (目標客群):
+   - 行動創作者 (Content Creators) 與需要常常帶著筆電移動的玩家。
+
+4. Connectivity (連線能力):
+   - 支援 Wi-Fi 7
+   - 具備 Thunderbolt 4 連接埠。

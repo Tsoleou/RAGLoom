@@ -1,0 +1,24 @@
+[PRODUCT SHEET: STARFORGE PRO 16]
+Tagline: 直播電競 — 為實況主打造的 240Hz 遊戲筆電
+
+1. Core Specs (核心規格):
+   - Model: StarForge Pro 16
+   - CPU: Intel Core Ultra 7 165H
+   - GPU: NVIDIA GeForce RTX 4070 Ti Super (12GB GDDR6X)
+   - RAM: 32GB DDR5 5600MHz
+   - Storage: 2TB PCIe Gen4 SSD
+   - Weight: 2.2 kg
+   - Thickness: 21.0mm
+
+2. Unique Selling Points (獨家賣點):
+   - "ProFlow Dual Fan": 雙風扇非對稱散熱設計，長時間遊戲與串流同步高負載下維持穩定效能。
+   - "240Hz QHD IPS": 2560x1600 解析度搭配 240Hz 高刷新率，電競清晰度與流暢度兼顧。
+   - "StreamDeck 快捷列": 預設可自訂 6 顆巨集按鍵，一鍵切換串流/錄影/降噪麥克風。
+
+3. Target Audience (目標客群):
+   - 遊戲實況主、半職業玩家，以及需要大螢幕高更新率的進階電競使用者。
+
+4. Connectivity (連線能力):
+   - 支援 Wi-Fi 7
+   - 具備 Thunderbolt 4 連接埠
+   - HDMI 2.1 / USB-A x3 / SD Card Reader

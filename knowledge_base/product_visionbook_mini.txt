@@ -1,0 +1,23 @@
+[PRODUCT SHEET: VISIONBOOK MINI]
+Tagline: 隨身畫布 — 13 吋觸控筆電，插畫師和設計系學生的行動工作室
+
+1. Core Specs (核心規格):
+   - Model: VisionBook Mini 13
+   - CPU: Intel Core Ultra 5 125H
+   - GPU: Intel Arc Graphics (Dedicated Tile)
+   - RAM: 16GB LPDDR5X (Onboard)
+   - Storage: 512GB PCIe Gen4 SSD
+   - Weight: 1.1 kg
+   - Thickness: 12.5mm
+
+2. Unique Selling Points (獨家賣點):
+   - "ColorVue Compact OLED": 13.3 吋 2.8K OLED，90Hz，100% DCI-P3，Delta E<2，色準適合行動設計使用。
+   - "Pen Support 4096 階": 支援主動式觸控筆（隨附），4096 段壓力感應，適合手繪與標注工作流。
+   - "15hr Battery": 超低功耗設計，實測輕度創作使用可達 15 小時。
+
+3. Target Audience (目標客群):
+   - 數位插畫師、設計科系學生、需要行動創作工具的視覺工作者。
+
+4. Connectivity (連線能力):
+   - 支援 Wi-Fi 7
+   - USB-C x2 (含 Thunderbolt 4) / USB-A x1 / 觸控筆收納槽

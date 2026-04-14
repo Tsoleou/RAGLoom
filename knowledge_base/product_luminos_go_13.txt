@@ -1,0 +1,26 @@
+[PRODUCT SHEET: LUMINOS GO 13]
+Tagline: 不到一公斤 — 0.99kg 碳纖維機身，22 小時續航商旅極致
+
+1. Core Specs (核心規格):
+   - Model: Luminos Go 13
+   - CPU: Intel Core Ultra 3 100U
+   - GPU: Intel Xe Graphics (Integrated)
+   - RAM: 8GB LPDDR5 (Onboard)
+   - Storage: 256GB PCIe SSD
+   - Weight: 0.99 kg
+   - Thickness: 12.0mm
+
+2. Unique Selling Points (獨家賣點):
+   - "Sub-1kg Featherweight": 全系列最輕，0.99kg 機身使用碳纖維複合材質，整日背包攜行幾乎無感。
+   - "22hr Battery": 最長續航設計，單次充電可使用 22 小時，國際長途飛行全程不需充電。
+   - "CloudSync LTE (選配)": 可選配 4G LTE 模組，隨時隨地行動上網，不依賴 Wi-Fi 熱點。
+
+3. Target Audience (目標客群):
+   - 頻繁飛行的商務人士、輕量移動工作者，以及重視電池續航勝過效能的使用者。
+
+4. Warning (注意事項):
+   - 本機定位為輕量行動辦公，不建議用於影片剪輯或高運算需求任務。
+
+5. Connectivity (連線能力):
+   - 支援 Wi-Fi 7
+   - USB-C x2 (含充電) / USB-A x1 / 選配 4G LTE nano-SIM

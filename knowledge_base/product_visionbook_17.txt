@@ -1,0 +1,27 @@
+[PRODUCT SHEET: VISIONBOOK 17 PRO]
+Tagline: 大螢幕創作站 — 17 吋 4K OLED 120Hz 專業後製筆電
+
+1. Core Specs (核心規格):
+   - Model: VisionBook 17 Pro
+   - CPU: Intel Core i9-14900HX
+   - GPU: NVIDIA GeForce RTX 4090 (16GB GDDR6X)
+   - RAM: 128GB DDR5 Dual Channel
+   - Storage: 4TB PCIe Gen4 SSD
+   - Weight: 3.1 kg
+   - Thickness: 26.0mm
+
+2. Unique Selling Points (獨家賣點):
+   - "ColorVue Pro OLED 17": 17.3 吋 4K OLED 120Hz，Delta E<1 出廠校色，支援 Thunderbolt 5 外接校色儀。
+   - "SilentBoost+": 進階三風扇均熱板設計，滿載 RTX 4090 下噪音仍控制在 <44dB。
+   - "DualThunderbolt 5": 兩組 Thunderbolt 5 (120Gbps)，可同時連接 8K 外接螢幕 + 高速儲存裝置。
+
+3. Target Audience (目標客群):
+   - 專業影像後製、3D 動畫師、VFX 工作室人員，需要最大螢幕與最高效能的創作工作站筆電。
+
+4. Warning (注意事項):
+   - 全負載下建議接電源使用，電池續航約 3-4 小時。
+   - 機身重量 3.1kg，非日常通勤首選，適合固定工作場域移動使用。
+
+5. Connectivity (連線能力):
+   - 支援 Wi-Fi 7
+   - Thunderbolt 5 x2 / USB-A x3 / HDMI 2.1 / SD Card Reader (UHS-II)

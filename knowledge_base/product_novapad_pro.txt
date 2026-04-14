@@ -1,0 +1,23 @@
+[PRODUCT SHEET: NOVAPAD PRO 16]
+Tagline: 高 CP 值電競入門 — 學生和休閒玩家的最佳選擇
+
+1. Core Specs (核心規格):
+   - Model: NovaPad Pro 16
+   - CPU: Intel Core i7-14700HX
+   - GPU: NVIDIA GeForce RTX 4060 (8GB GDDR6)
+   - RAM: 16GB DDR5 5600MHz
+   - Storage: 1TB PCIe Gen4 SSD
+
+2. Unique Selling Points (獨家賣點):
+   - "Code-Breaker Design": 上蓋刻有加密代碼，玩家解碼後可獲得獨家桌布。
+   - "TurboVane 3D Fan": 第 5 代金屬風扇，比塑膠風扇多 10% 風流量。
+   - 價格定位：高 CP 值首選，適合學生與主流玩家。
+
+3. Display (螢幕):
+   - 16吋 WQXGA (2560x1600) IPS 面板
+   - 165Hz 更新率，支援 NVIDIA G-SYNC。
+   - 100% DCI-P3 廣色域 (高階配置)。
+
+4. Connectivity (連線能力):
+   - 支援 Wi-Fi 7
+   - 具備 Thunderbolt 4 連接埠。

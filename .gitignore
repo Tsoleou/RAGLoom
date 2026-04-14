@@ -1,0 +1,30 @@
+# Environment
+.env
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+venv/
+
+# ChromaDB local data
+chroma_db/
+test_chroma_db/
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+
+# Claude Code
+.claude/
+CLAUDE.md
+CLAUDE_CODE_INSTRUCTION.md
+
+# macOS
+.DS_Store
+
+# Personal / local-only
+Res/
+
+# Goole
+GEMINI.md

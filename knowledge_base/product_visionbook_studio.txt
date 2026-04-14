@@ -1,0 +1,23 @@
+[PRODUCT SHEET: VISIONBOOK STUDIO]
+Tagline: 影視級調色 — AdobeRGB 99% 影片後製專用筆電
+
+1. Core Specs (核心規格):
+   - Model: VisionBook Studio 16
+   - CPU: Intel Core Ultra 9 185H
+   - GPU: NVIDIA GeForce RTX 4080 (12GB GDDR6)
+   - RAM: 64GB DDR5 5600MHz
+   - Storage: 2TB PCIe Gen4 SSD
+   - Weight: 2.6 kg
+   - Thickness: 23.0mm
+
+2. Unique Selling Points (獨家賣點):
+   - "ColorVue Studio OLED 4K": 16 吋 4K OLED 120Hz，含 AdobeRGB 99% / DCI-P3 100% 雙色域認證，出廠附校色報告書。
+   - "SilentBoost Pro": 升級版散熱模組，滿載 GPU 渲染下仍維持 <42dB 噪音，長時間工作室作業適用。
+   - "Creator Mode+": 進階 Creator Mode，可分別為 Premiere / After Effects / DaVinci Resolve 儲存獨立效能 profile。
+
+3. Target Audience (目標客群):
+   - 影片後製工作室、Motion Graphics 設計師，需要旗艦色準 OLED 螢幕且須長時間安靜作業的創作者。
+
+4. Connectivity (連線能力):
+   - 支援 Wi-Fi 7
+   - Thunderbolt 4 x2 / USB-A x3 / SD Card Reader (UHS-II) / HDMI 2.1

@@ -1,0 +1,26 @@
+[PRODUCT SHEET: NOVAPAD LITE]
+Tagline: 簡單好用 — 全家人的第一台平價筆電
+
+1. Core Specs (核心規格):
+   - Model: NovaPad Lite 15
+   - CPU: Intel Core i3-1315U
+   - GPU: Intel UHD Graphics (Integrated)
+   - RAM: 8GB DDR4
+   - Storage: 256GB PCIe SSD
+   - Weight: 1.8 kg
+   - Thickness: 19.0mm
+
+2. Unique Selling Points (獨家賣點):
+   - "LiteCool Passive Thermal": 低功耗 CPU 結合輕量散熱設計，日常使用幾乎無風扇噪音。
+   - "FHD IPS 250 nits": 1920x1080 螢幕，適合室內文書閱讀與視訊會議使用。
+   - "SimpleLaunch 一鍵開機": 開蓋即開機功能，搭配 SSD 快速開機，從閤蓋到可用不超過 10 秒。
+
+3. Target Audience (目標客群):
+   - 首次購買筆電的學生、家庭用途（上網、影片、文書），預算優先考量。
+
+4. Warning (注意事項):
+   - 本機不適合繪圖、影片剪輯或遊戲等高效能需求，建議用於日常輕度使用。
+
+5. Connectivity (連線能力):
+   - 支援 Wi-Fi 5
+   - USB-A x2 / USB-C x1 / HDMI 1.4

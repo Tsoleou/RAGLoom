@@ -1,0 +1,23 @@
+[PRODUCT SHEET: STARFORGE EDGE]
+Tagline: 入門電競首選 — 學生也買得起的 RTX 筆電
+
+1. Core Specs (核心規格):
+   - Model: StarForge Edge
+   - CPU: Intel Core i5-13500H
+   - GPU: NVIDIA GeForce RTX 4050 (6GB GDDR6)
+   - RAM: 16GB DDR5
+   - Storage: 512GB PCIe Gen4 SSD
+   - Weight: 2.1 kg
+   - Thickness: 22.0mm
+
+2. Unique Selling Points (獨家賣點):
+   - "EdgeBoost Cooling": 單風扇高轉速設計，針對入門電競場景優化熱管理，噪音控制在中等負載下 <42dB。
+   - "144Hz FHD IPS": 1920x1080 / 144Hz 入門電競標配螢幕，sRGB 100%。
+   - "SpeedType Keyboard": 1.5mm 鍵程、防手汗鍵帽塗層，適合長時間遊戲。
+
+3. Target Audience (目標客群):
+   - 首次購入電競筆電的學生族群，預算有限但追求基本流暢遊戲體驗。
+
+4. Connectivity (連線能力):
+   - 支援 Wi-Fi 6E
+   - USB-A x3 / USB-C x1 / HDMI 2.0

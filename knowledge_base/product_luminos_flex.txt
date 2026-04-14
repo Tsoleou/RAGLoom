@@ -1,0 +1,23 @@
+[PRODUCT SHEET: LUMINOS FLEX 360]
+Tagline: 翻轉會議 — 360° 四模式變形筆電，簡報觸控一機搞定
+
+1. Core Specs (核心規格):
+   - Model: Luminos Flex 360
+   - CPU: Intel Core Ultra 7 155U
+   - GPU: Intel Arc Graphics (Integrated)
+   - RAM: 16GB LPDDR5 (Onboard)
+   - Storage: 512GB PCIe Gen4 SSD
+   - Weight: 1.6 kg
+   - Thickness: 17.0mm
+
+2. Unique Selling Points (獨家賣點):
+   - "360° FlexHinge": 全轉式鉸鏈支援筆電 / 平板 / 帳篷 / 展示四種模式，自動旋轉偵測切換介面。
+   - "ActivePen 4096 階": 隨附主動式觸控筆，4096 段壓力感應，支援手寫標注與簽署文件。
+   - "IR Camera + Windows Hello": 臉部辨識搭配 AI 噪音消除麥克風陣列，遠端會議品質更佳。
+
+3. Target Audience (目標客群):
+   - 顧問、教育工作者、需要在客戶面前展示並手寫標注的業務型使用者。
+
+4. Connectivity (連線能力):
+   - 支援 Wi-Fi 7
+   - Thunderbolt 4 x1 / USB-A x2 / USB-C x1 / HDMI 2.0

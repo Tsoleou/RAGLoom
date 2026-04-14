@@ -1,0 +1,23 @@
+[PRODUCT SHEET: LUMINOS PRO 15]
+Tagline: 隱私商務 — 內建防窺螢幕的企業旗艦筆電
+
+1. Core Specs (核心規格):
+   - Model: Luminos Pro 15
+   - CPU: Intel Core Ultra 9 185H
+   - GPU: NVIDIA GeForce RTX 4060 (8GB GDDR6)
+   - RAM: 32GB DDR5 5600MHz
+   - Storage: 1TB PCIe Gen4 SSD
+   - Weight: 1.9 kg
+   - Thickness: 18.0mm
+
+2. Unique Selling Points (獨家賣點):
+   - "LuminosShield Privacy Screen": 內建防窺螢幕模式，一鍵切換 60° 可視角，防止旁人在公共場所窺視敏感資料。
+   - "NumberPad 2.0": 觸控板右側整合數字鍵盤，按壓感應切換模式，財務分析師首選。
+   - "vPro + Intel ME": 支援遠端企業管理，IT 部門可遠端維護與診斷，企業部署效率大幅提升。
+
+3. Target Audience (目標客群):
+   - 中高階主管、財務分析師，需要商務外觀加上獨立 GPU 效能，且有企業資安需求的使用者。
+
+4. Connectivity (連線能力):
+   - 支援 Wi-Fi 7
+   - Thunderbolt 4 x2 / USB-A x3 / HDMI 2.1 / RJ-45 Ethernet

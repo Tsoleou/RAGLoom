@@ -1,0 +1,15 @@
+
+[INTERNAL MEMO: STARFORGE TITAN 9000 TECHNICAL DEEP DIVE]
+
+1. Cooling System (散熱系統):
+   - 獨家搭載 "5th Gen TurboVane 3D Fan" 技術。
+   - 使用 "Liquid Metal" (液態金屬) 導熱，降溫效率提升 45%。
+   - 風扇葉片厚度僅 0.08mm (比一張紙還薄)。
+
+2. Display Tech (螢幕技術):
+   - 18吋 Mini-LED 面板，支援 1000 nits 峰值亮度。
+   - 100% DCI-P3 廣色域，Delta E < 1 (專業級色準)。
+
+3. Keyboard (鍵盤):
+   - HyperKey 機械軸 (HyperKey Mechanical Switches)。
+   - 支援單鍵 RGB 背光 (Per-key RGB)。

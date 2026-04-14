@@ -1,0 +1,23 @@
+[PRODUCT SHEET: TITANBOOK M1]
+Tagline: 輕量工作站 — 1.95kg 帶 Quadro 顯卡的現場工程筆電
+
+1. Core Specs (核心規格):
+   - Model: TitanBook M1
+   - CPU: Intel Core Ultra 7 165H
+   - GPU: NVIDIA RTX 2000 Ada Generation (8GB GDDR6, Quadro Class)
+   - RAM: 32GB DDR5
+   - Storage: 1TB PCIe Gen4 SSD
+   - Weight: 1.95 kg
+   - Thickness: 20.0mm
+
+2. Unique Selling Points (獨家賣點):
+   - "Compact Workstation Form Factor": 與一般商務筆電接近的尺寸，卻搭載 ISV 認證的 Quadro 專業 GPU。
+   - "Workstation Silent Mode": 靜音模式下風扇噪音 <30dB，同時維持 Quadro 驅動穩定性，適合開放辦公室使用。
+   - "3-Year Enterprise Warranty": 標配三年企業保固，含到府收送與 NBD 緊急維修服務。
+
+3. Target Audience (目標客群):
+   - 外勤工程師、現場技術人員、需要行動工作站卻不想揹超過 2kg 的工程類使用者。
+
+4. Connectivity (連線能力):
+   - 支援 Wi-Fi 7
+   - Thunderbolt 4 x2 / USB-A x3 / RJ-45 Ethernet / HDMI 2.1

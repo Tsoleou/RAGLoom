@@ -1,0 +1,23 @@
+[PRODUCT SHEET: LUMINOS S14]
+Tagline: 軍規商務 — 摔不壞的 18 小時續航商用超輕薄
+
+1. Core Specs (核心規格):
+   - Model: Luminos S14
+   - CPU: Intel Core Ultra 5 125U
+   - GPU: Intel Iris Xe Graphics (Integrated)
+   - RAM: 16GB LPDDR5 (Onboard)
+   - Storage: 512GB PCIe Gen4 SSD
+   - Weight: 1.25 kg
+   - Thickness: 14.5mm
+
+2. Unique Selling Points (獨家賣點):
+   - "MilitaryGrade MIL-STD-810H": 通過美軍 810H 標準測試，抗震、抗壓、抗低溫，差旅用機耐用度有保障。
+   - "SecureLogin 雙模驗證": 臉部辨識（IR Camera）+ 指紋辨識電源鍵二選一，開機快速且無密碼外洩風險。
+   - "18hr Battery": 商務行程一整天不插電，搭配 65W USB-C PD 快充，30 分鐘充至 50%。
+
+3. Target Audience (目標客群):
+   - 頻繁出差的業務人員、企業採購的商務機首選，重視安全性與耐用度。
+
+4. Connectivity (連線能力):
+   - 支援 Wi-Fi 7
+   - Thunderbolt 4 x2 / USB-A x2 / HDMI 2.0 / RJ-45 Ethernet

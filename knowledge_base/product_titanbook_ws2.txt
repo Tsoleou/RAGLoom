@@ -1,0 +1,27 @@
+[PRODUCT SHEET: TITANBOOK WS2]
+Tagline: 算力怪獸 — Xeon 18 核 + RTX 5000，VFX 和 AI 運算行動站
+
+1. Core Specs (核心規格):
+   - Model: TitanBook WS2
+   - CPU: Intel Xeon W-2295 (18-Core)
+   - GPU: NVIDIA RTX 5000 Ada Generation (16GB GDDR6, Quadro Class)
+   - RAM: 128GB ECC DDR5 Quad Channel
+   - Storage: 8TB PCIe Gen4 SSD (RAID 1 or RAID 0 可選)
+   - Weight: 4.2 kg
+   - Thickness: 32.0mm
+
+2. Unique Selling Points (獨家賣點):
+   - "Xeon ECC + RAID": Xeon 工作站 CPU 搭配 ECC 記憶體與雙 SSD RAID，企業級資料完整性保障。
+   - "RTX 5000 Ada Professional GPU": 專業渲染與 AI 推論加速，CUDA Core 全開，適合大型 VFX 與科學計算。
+   - "4K IPS Pro Display": 17.3 吋 4K IPS 螢幕，DCI-P3 95%，亮度 600 nits，適合色彩敏感的視覺工作流。
+
+3. Target Audience (目標客群):
+   - VFX 渲染工作室、資料科學家、需要桌機工作站效能但仍須偶爾移動的重度使用者。
+
+4. Warning (注意事項):
+   - 本機設計為半固定工作站，建議搭配充電底座使用，電池續航約 2-3 小時。
+   - 重量 4.2kg，日常通勤不適用。
+
+5. Connectivity (連線能力):
+   - 支援 Wi-Fi 7
+   - Thunderbolt 4 x2 / USB-A x4 / RJ-45 Ethernet x2 / HDMI 2.1 / Docking Port

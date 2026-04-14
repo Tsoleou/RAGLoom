@@ -1,0 +1,23 @@
+[PRODUCT SHEET: TITANBOOK WS1]
+Tagline: 工程認證 — ISV 認證行動工作站，CAD/CAM 專業首選
+
+1. Core Specs (核心規格):
+   - Model: TitanBook WS1
+   - CPU: Intel Core i9-14900HX
+   - GPU: NVIDIA RTX 4000 Ada Generation (8GB GDDR6, Quadro Class)
+   - RAM: 64GB ECC DDR5
+   - Storage: 2TB PCIe Gen4 SSD
+   - Weight: 2.8 kg
+   - Thickness: 24.0mm
+
+2. Unique Selling Points (獨家賣點):
+   - "ISV Certified": 通過 Autodesk、SolidWorks、CATIA 等主流工程軟體 ISV 認證，確保驅動穩定無崩潰。
+   - "ECC Memory": 錯誤糾正記憶體，防止長時間運算中的隨機位元錯誤，適合工程模擬與科學計算。
+   - "vPro Enterprise": 企業級遠端管理支援，IT 管理員可遠端部署、診斷與修復。
+
+3. Target Audience (目標客群):
+   - 機械工程師、建築師、CAD/CAM 使用者，需要行動工作站且要求軟體認證穩定性。
+
+4. Connectivity (連線能力):
+   - 支援 Wi-Fi 7
+   - Thunderbolt 4 x2 / USB-A x3 / RJ-45 Ethernet / SD Card Reader

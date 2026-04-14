@@ -1,0 +1,21 @@
+[PRODUCT SHEET: VISIONBOOK 15]
+Tagline: 專業色彩 — 4K OLED 創作者筆電，出廠校色 Delta E<1
+
+1. Core Specs (核心規格):
+   - Model: VisionBook 15 Pro Edition
+   - CPU: Intel Core i9-13900HX
+   - GPU: NVIDIA GeForce RTX 4080 (12GB)
+   - RAM: 64GB DDR5 Dual Channel
+
+2. Unique Selling Points (獨家賣點):
+   - "ColorVue OLED": 15.6 吋 4K OLED，100% DCI-P3，Delta E<1 出廠校色，適合專業影像與剪輯作業。
+   - "SilentBoost": 雙風扇均熱板設計，滿載運算下風扇噪音 <40 dB，長時間高負載仍可安靜運行。
+   - "Creator Mode": 一鍵切換為高色準 + 低噪音 profile，適合內容創作與高效能運算工作流。
+
+3. Warning (注意事項):
+   - 4K OLED 全亮度下電池續航會明顯縮短，長時間作業建議接上電源。
+   - 持續高負載運算時機身溫度可能升高，建議置於平面散熱以獲得最佳效能。
+
+4. Connectivity (連線能力):
+   - 支援 Wi-Fi 7
+   - 具備 Thunderbolt 4 連接埠。

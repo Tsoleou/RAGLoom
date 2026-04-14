@@ -1,0 +1,24 @@
+[PRODUCT SHEET: STARFORGE TITAN 9000]
+Tagline: 旗艦怪獸 — 桌機等級效能塞進筆電，三風扇液態金屬散熱
+
+1. Core Specs (核心規格):
+   - Model: StarForge Titan 9000
+   - CPU: Intel Core i9-14900HX
+   - GPU: NVIDIA GeForce RTX 4090 (16GB GDDR6X)
+   - RAM: 64GB DDR5 6400MHz Dual Channel
+   - Storage: 4TB PCIe Gen4 SSD (RAID 0)
+   - Weight: 3.5 kg
+   - Thickness: 28.8mm
+
+2. Unique Selling Points (獨家賣點):
+   - "Liquid Metal Cooling": 導熱效率較傳統散熱膏提升 45%，維持旗艦級效能不降頻。
+   - "TurboVane 3D 第5代": 三風扇三出風口設計，最大散熱功耗 230W TDP。
+   - "HyperKey 機械軸": 全尺寸機械感按鍵，單鍵 RGB 可編程，FPS 專用觸感反饋。
+
+3. Target Audience (目標客群):
+   - 硬派玩家、科技狂熱者、以及需要桌機級效能在筆電上的重度使用者。
+
+4. Connectivity (連線能力):
+   - 支援 Wi-Fi 7
+   - 具備 Thunderbolt 4 連接埠 x2
+   - HDMI 2.1 + Mini DisplayPort 1.4

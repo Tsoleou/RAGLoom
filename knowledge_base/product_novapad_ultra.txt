@@ -1,0 +1,23 @@
+[PRODUCT SHEET: NOVAPAD ULTRA]
+Tagline: AMD 全能戰將 — FreeSync 165Hz 創作與遊戲兼顧
+
+1. Core Specs (核心規格):
+   - Model: NovaPad Ultra 16
+   - CPU: AMD Ryzen 9 7945HX
+   - GPU: AMD Radeon RX 7700S (8GB GDDR6)
+   - RAM: 32GB DDR5 5600MHz
+   - Storage: 1TB PCIe Gen5 SSD
+   - Weight: 2.3 kg
+   - Thickness: 22.5mm
+
+2. Unique Selling Points (獨家賣點):
+   - "AMD Advantage Certified": 通過 AMD 官方認證，CPU + GPU 協同優化，Smart Shift 技術動態分配效能。
+   - "FreeSync Premium Pro 165Hz": WQXGA 螢幕搭配 FreeSync，低延遲無撕裂，100% DCI-P3。
+   - "HyperDrive PCIe Gen5": 搭載 PCIe 5.0 SSD，讀取速度最高 14GB/s，載入場景與大型素材明顯更快。
+
+3. Target Audience (目標客群):
+   - 偏好 AMD 生態系的玩家、追求 CP 值的進階使用者，以及創作兼遊戲兩用的族群。
+
+4. Connectivity (連線能力):
+   - 支援 Wi-Fi 6E
+   - USB-C x2 (含 DisplayPort 輸出) / USB-A x3 / HDMI 2.1
