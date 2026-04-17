@@ -1,4 +1,6 @@
 import { useState, useRef, useEffect } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import { Send, X, Database, ChevronDown, ChevronUp } from "lucide-react";
 import { RobotAvatar } from "./RobotAvatar";
 import {
   parseChatbotOutput,
@@ -41,6 +43,16 @@ const SUGGESTED_QUESTIONS = [
   "NovaPad Pro 跟 NovaPad Ultra 有什麼差別？",
   "VisionBook 的螢幕規格是什麼？",
 ];
+
+const chipVariants = {
+  hidden: { opacity: 0, x: -12 },
+  visible: { opacity: 1, x: 0 },
+};
+
+const containerVariants = {
+  hidden: {},
+  visible: { transition: { staggerChildren: 0.07 } },
+};
 
 export function ChatView() {
   const [avatarState, setAvatarState] = useState<AvatarState>("idle");
@@ -101,7 +113,6 @@ export function ChatView() {
         let replyContent = data.reply;
         let emotion: string | undefined;
 
-        // Chatbot mode: extract {reply, emotion} from the LLM's JSON output
         if (!data.blocked && mode === "chatbot") {
           const parsed = parseChatbotOutput(data.reply);
           if (parsed) {
@@ -122,7 +133,6 @@ export function ChatView() {
           setAvatarState("error");
           setAvatarMessage("Blocked by guardrail");
         } else if (emotion) {
-          // Chatbot mode: avatar reflects the LLM's self-reported emotion
           const theme = getEmotionTheme(emotion);
           setAvatarState("talk");
           setAvatarMessage("");
@@ -131,8 +141,6 @@ export function ChatView() {
             setAvatarMessage(`Feeling: ${theme.label.toLowerCase()}`);
           }, 1500);
         } else {
-          // Professional mode: brief talk animation then neutral idle.
-          // No "happy" fallback — that would be a fake emotion.
           setAvatarState("talk");
           setAvatarMessage("");
           setTimeout(() => {
@@ -183,7 +191,7 @@ export function ChatView() {
   return (
     <div className="h-full flex bg-[#1a1a1a] text-[#e0e0e0]">
       {/* Left: Avatar + controls */}
-      <aside className="w-72 border-r border-[#2a2a2a] p-4 flex flex-col gap-4">
+      <aside className="w-64 border-r border-[#00ccaa]/10 bg-[#141414] p-4 flex flex-col gap-4">
         <div className="flex justify-center">
           <RobotAvatar state={avatarState} message={avatarMessage} size={128} />
         </div>
@@ -191,32 +199,36 @@ export function ChatView() {
         <button
           onClick={handleIngest}
           disabled={loading}
-          className="px-3 py-2 bg-[#e07830] hover:bg-[#f08840] disabled:opacity-50 text-white text-sm rounded"
+          style={loading ? { animation: "glow-pulse 1.5s ease-in-out infinite" } : undefined}
+          className="flex items-center justify-center gap-2 px-3 py-2 bg-[#e07830] hover:bg-[#f08840] disabled:opacity-50 text-white text-sm rounded transition-colors"
         >
-          {loaded ? "Reload Knowledge Base" : "Load Knowledge Base"}
+          <Database size={14} />
+          {loaded ? "Reload KB" : "Load KB"}
         </button>
 
-        <div className="text-xs text-[#888]">
-          <div className="mb-1.5 text-[#aaa]">Output Mode</div>
-          <div className="flex gap-2">
+        {/* Pill mode toggle */}
+        <div>
+          <div className="text-[10px] uppercase tracking-widest text-[#555] mb-2">Output Mode</div>
+          <div className="flex rounded-md border border-[#2a2a2a] overflow-hidden text-xs">
             {(["professional", "chatbot"] as Mode[]).map((m) => (
-              <label key={m} className="flex items-center gap-1.5 cursor-pointer">
-                <input
-                  type="radio"
-                  checked={mode === m}
-                  onChange={() => setMode(m)}
-                  className="accent-[#e07830]"
-                />
+              <button
+                key={m}
+                onClick={() => setMode(m)}
+                className={`flex-1 py-1.5 capitalize transition-colors ${
+                  mode === m
+                    ? "bg-[#1a3040] text-[#00ccaa] border-b border-b-[#00ccaa]"
+                    : "bg-[#1a1a1a] text-[#555] hover:text-[#888]"
+                }`}
+              >
                 {m}
-              </label>
+              </button>
             ))}
           </div>
         </div>
 
-
         {threshold !== null && (
-          <div className="text-[10px] text-[#666] mt-auto font-mono">
-            threshold: {threshold} | top_k: {topK}
+          <div className="text-[10px] text-[#444] mt-auto font-mono">
+            threshold: {threshold} · top_k: {topK}
           </div>
         )}
       </aside>
@@ -227,127 +239,152 @@ export function ChatView() {
         <div ref={scrollRef} className="flex-1 overflow-y-auto p-6 space-y-4">
           {messages.length === 0 && (
             <div className="flex flex-col items-center gap-4 mt-16 px-6">
-              <div className="text-[#555] text-sm">
-                {loaded ? "Try asking..." : "Load the knowledge base to start chatting."}
+              <div className="text-[#444] text-sm tracking-wide">
+                {loaded ? "Try asking..." : "Load the knowledge base to start."}
               </div>
               {loaded && (
-                <div className="flex flex-col gap-2 w-full max-w-md">
+                <motion.div
+                  className="flex flex-col gap-2 w-full max-w-md"
+                  variants={containerVariants}
+                  initial="hidden"
+                  animate="visible"
+                >
                   {SUGGESTED_QUESTIONS.map((q) => (
-                    <button
+                    <motion.button
                       key={q}
+                      variants={chipVariants}
+                      whileHover={{ x: 5 }}
+                      transition={{ type: "spring", stiffness: 300, damping: 20 }}
                       onClick={() => handleSendText(q)}
-                      className="text-left px-4 py-2.5 rounded-lg border border-[#333] bg-[#222] hover:bg-[#2a2a2a] hover:border-[#e07830]/40 text-sm text-[#aaa] hover:text-[#e0e0e0] transition-colors"
+                      className="text-left px-4 py-2.5 rounded-lg border border-[#2a2a2a] border-l-2 border-l-[#00ccaa]/30 bg-[#141414] hover:bg-[#1a2a2f] hover:border-l-[#00ccaa] text-sm text-[#888] hover:text-[#c0e0d8] transition-colors"
                     >
                       {q}
-                    </button>
+                    </motion.button>
                   ))}
-                </div>
+                </motion.div>
               )}
             </div>
           )}
-          {messages.map((m, i) => {
-            const emTheme = m.emotion ? getEmotionTheme(m.emotion) : null;
-            return (
-              <div
-                key={i}
-                className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}
-              >
-                <div
-                  className={`max-w-[75%] px-4 py-2.5 rounded-lg text-sm whitespace-pre-wrap ${
-                    m.role === "user"
-                      ? "bg-[#e07830] text-white"
-                      : m.blocked
-                      ? "bg-[#2a2218] text-[#f0c070] border border-[#f0a040]/50"
-                      : "bg-[#252525] text-[#e0e0e0] border border-[#333]"
-                  }`}
+
+          <AnimatePresence initial={false}>
+            {messages.map((m, i) => {
+              const emTheme = m.emotion ? getEmotionTheme(m.emotion) : null;
+              return (
+                <motion.div
+                  key={i}
+                  initial={{ opacity: 0, x: m.role === "user" ? 20 : -20, y: 6 }}
+                  animate={{ opacity: 1, x: 0, y: 0 }}
+                  transition={{ duration: 0.22, ease: "easeOut" }}
+                  className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}
                 >
-                  {m.blocked && (
-                    <div className="text-[10px] uppercase tracking-wider text-[#f0a040] mb-1 font-mono">
-                      ⊘ Blocked by Guardrail
-                    </div>
-                  )}
-                  {emTheme && (
-                    <div className="mb-1.5">
-                      <span
-                        className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono font-bold tracking-wide"
-                        style={{
-                          backgroundColor: emTheme.bg,
-                          border: `1px solid ${emTheme.border}`,
-                          color: emTheme.text,
-                        }}
-                      >
+                  <div
+                    className={`max-w-[75%] px-4 py-2.5 rounded-lg text-sm whitespace-pre-wrap ${
+                      m.role === "user"
+                        ? "bg-[#e07830] text-white shadow-[0_0_14px_rgba(224,120,48,0.25)]"
+                        : m.blocked
+                        ? "bg-[#2a1a10] text-[#f0c070] border border-[#f0a040]/30 border-l-2 border-l-[#f0a040]"
+                        : "bg-[#0a1a1f] text-[#d0e8e0] border border-[#1a3540] border-l-2 border-l-[#00ccaa] shadow-[0_0_18px_rgba(0,204,170,0.06)]"
+                    }`}
+                  >
+                    {m.blocked && (
+                      <div className="text-[10px] uppercase tracking-wider text-[#f0a040] mb-1 font-mono">
+                        ⊘ Blocked by Guardrail
+                      </div>
+                    )}
+                    {emTheme && (
+                      <div className="mb-1.5">
                         <span
-                          className="w-1.5 h-1.5 rounded-full"
-                          style={{ backgroundColor: emTheme.dot }}
-                        />
-                        {emTheme.label}
-                      </span>
-                    </div>
-                  )}
-                  {m.content}
-                </div>
-              </div>
-            );
-          })}
+                          className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono font-bold tracking-wide"
+                          style={{
+                            backgroundColor: emTheme.bg,
+                            border: `1px solid ${emTheme.border}`,
+                            color: emTheme.text,
+                          }}
+                        >
+                          <span
+                            className="w-1.5 h-1.5 rounded-full"
+                            style={{ backgroundColor: emTheme.dot }}
+                          />
+                          {emTheme.label}
+                        </span>
+                      </div>
+                    )}
+                    {m.content}
+                  </div>
+                </motion.div>
+              );
+            })}
+          </AnimatePresence>
 
           {/* Typing indicator */}
           {loading && messages.some((m) => m.role === "user") && (
-            <div className="flex justify-start">
-              <div className="bg-[#252525] border border-[#333] px-4 py-3 rounded-lg flex items-center gap-1">
+            <motion.div
+              initial={{ opacity: 0, x: -12 }}
+              animate={{ opacity: 1, x: 0 }}
+              className="flex justify-start"
+            >
+              <div className="bg-[#0a1a1f] border border-[#1a3540] border-l-2 border-l-[#00ccaa] px-4 py-3 rounded-lg flex items-center gap-1.5 shadow-[0_0_18px_rgba(0,204,170,0.06)]">
                 {[0, 150, 300].map((delay) => (
                   <span
                     key={delay}
-                    className="w-1.5 h-1.5 rounded-full bg-[#888] animate-bounce"
-                    style={{ animationDelay: `${delay}ms` }}
+                    className="w-1.5 h-1.5 rounded-full bg-[#00ccaa] animate-bounce"
+                    style={{
+                      animationDelay: `${delay}ms`,
+                      boxShadow: "0 0 4px rgba(0,204,170,0.6)",
+                    }}
                   />
                 ))}
               </div>
-            </div>
+            </motion.div>
           )}
         </div>
 
         {/* Input */}
-        <div className="border-t border-[#2a2a2a] p-4 flex gap-2">
+        <div className="border-t border-[#00ccaa]/10 p-4 flex gap-2 bg-[#141414]">
           <textarea
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={onKeyDown}
             placeholder="e.g. What cooling tech does StarForge X1 use?"
             rows={2}
-            className="flex-1 bg-[#252525] border border-[#333] rounded px-3 py-2 text-sm resize-none focus:outline-none focus:border-[#e07830]"
+            className="flex-1 bg-[#1a1a1a] border border-[#2a2a2a] rounded px-3 py-2 text-sm resize-none focus:outline-none focus:border-[#00ccaa] transition-all"
+            style={{ boxShadow: "none" }}
+            onFocus={(e) => (e.currentTarget.style.boxShadow = "0 0 8px rgba(0,204,170,0.2)")}
+            onBlur={(e) => (e.currentTarget.style.boxShadow = "none")}
           />
           <button
             onClick={handleSend}
             disabled={loading || !input.trim()}
-            className="px-4 py-2 bg-[#e07830] hover:bg-[#f08840] disabled:opacity-50 text-white text-sm rounded self-stretch"
+            className="px-4 py-2 bg-[#e07830] hover:bg-[#f08840] hover:shadow-[0_0_10px_rgba(224,120,48,0.4)] disabled:opacity-40 text-white text-sm rounded self-stretch transition-all flex items-center justify-center"
           >
-            Send
+            <Send size={15} />
           </button>
           <button
             onClick={handleClear}
             disabled={loading}
             title="Clear chat history and reset memory"
-            className="px-3 py-2 border border-[#333] hover:bg-[#2a2a2a] hover:text-[#aaa] disabled:opacity-40 text-[#666] text-sm rounded self-stretch transition-colors whitespace-nowrap"
+            className="px-3 py-2 border border-[#2a2a2a] hover:bg-[#1a1a1a] hover:border-[#00ccaa]/30 hover:text-[#888] disabled:opacity-40 text-[#555] text-sm rounded self-stretch transition-colors flex items-center gap-1.5 whitespace-nowrap"
           >
-            Clear History
+            <X size={13} />
+            Clear
           </button>
         </div>
 
         {/* Retrieval panel */}
         {retrieval.length > 0 && (
-          <div className="border-t border-[#2a2a2a]">
+          <div className="border-t border-[#00ccaa]/10 bg-[#141414]">
             <button
               onClick={() => setShowRetrieval((v) => !v)}
-              className="w-full flex items-center justify-between px-4 py-2 text-[#555] hover:text-[#888] hover:bg-[#1e1e1e] transition-colors text-xs font-mono"
+              className="w-full flex items-center justify-between px-4 py-2 text-[#444] hover:text-[#00ccaa]/60 hover:bg-[#0d1a1f] transition-colors text-xs font-mono"
             >
-              <span>Retrieval Details · {retrieval.length} chunks</span>
-              <span>{showRetrieval ? "▴" : "▾"}</span>
+              <span>Retrieval · {retrieval.length} chunks</span>
+              {showRetrieval ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
             </button>
             {showRetrieval && (
               <div className="px-4 pb-4 max-h-52 overflow-y-auto">
                 <table className="w-full text-[11px] font-mono">
-                  <thead className="text-[#666]">
-                    <tr className="border-b border-[#2a2a2a]">
+                  <thead className="text-[#444]">
+                    <tr className="border-b border-[#1a3540]">
                       <th className="text-left py-1 pr-2">#</th>
                       <th className="text-left py-1 pr-2">Source</th>
                       <th className="text-right py-1 pr-2">Score</th>
@@ -358,19 +395,19 @@ export function ChatView() {
                   </thead>
                   <tbody>
                     {retrieval.map((r, i) => (
-                      <tr key={i} className="border-b border-[#222]">
-                        <td className="py-1 pr-2 text-[#666]">{i + 1}</td>
-                        <td className="py-1 pr-2 text-[#aaa]">{r.source}</td>
-                        <td className="py-1 pr-2 text-right">{r.score}</td>
-                        <td className="py-1 pr-2 text-right text-[#666]">{r.distance}</td>
+                      <tr key={i} className="border-b border-[#0d1a1f]">
+                        <td className="py-1 pr-2 text-[#444]">{i + 1}</td>
+                        <td className="py-1 pr-2 text-[#00ccaa]/60">{r.source}</td>
+                        <td className="py-1 pr-2 text-right text-[#888]">{r.score}</td>
+                        <td className="py-1 pr-2 text-right text-[#444]">{r.distance}</td>
                         <td className="py-1 pr-2 text-center">
                           {r.passed ? (
-                            <span className="text-[#5fbf5f]">Y</span>
+                            <span className="text-[#00ccaa]">Y</span>
                           ) : (
-                            <span className="text-[#666]">N</span>
+                            <span className="text-[#444]">N</span>
                           )}
                         </td>
-                        <td className="py-1 text-[#888] truncate max-w-[300px]">
+                        <td className="py-1 text-[#555] truncate max-w-[300px]">
                           {r.preview.slice(0, 80)}
                         </td>
                       </tr>

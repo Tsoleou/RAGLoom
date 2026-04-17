@@ -18,7 +18,7 @@ function App() {
       <header className="px-6 py-3 bg-[#202020] border-b border-[#2a2a2a] flex items-center justify-between">
         <div className="flex items-center gap-3">
           <h1 className="text-lg font-bold text-[#e0e0e0]">
-            RAGLoom
+            <span style={{ textShadow: "0 0 18px rgba(0,204,170,0.5)" }}>RAGLoom</span>
           </h1>
           <span className="text-xs text-[#666]">{hint}</span>
         </div>

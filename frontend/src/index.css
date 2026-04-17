@@ -8,6 +8,13 @@ html, body, #root {
   font-family: "Noto Sans TC", system-ui, sans-serif;
 }
 
+/* ── Cyberpunk glow animations ─────────────────────────────────── */
+
+@keyframes glow-pulse {
+  0%, 100% { box-shadow: 0 0 4px rgba(0, 204, 170, 0.25); }
+  50%       { box-shadow: 0 0 14px rgba(0, 204, 170, 0.55); }
+}
+
 /* ── Dark theme overrides for React Flow ───────────────────────── */
 
 .react-flow__background {
