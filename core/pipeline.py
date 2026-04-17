@@ -99,6 +99,8 @@ class RAGPipeline:
         self,
         question: str,
         mode: Optional[str] = None,
+        graph_preset: Optional[str] = None,
+        graph_custom_text: Optional[str] = None,
         glossary: str = "",
         vision_context: str = "",
     ) -> GenerationResult:
@@ -137,8 +139,15 @@ class RAGPipeline:
             vision_context=vision_context,
         )
 
-        # 3. Resolve persona from preset and prepend it to the system text
-        persona = get_preset(mode) or PROFESSIONAL
+        # 3. Resolve persona — graph_preset (from saved profile) takes priority
+        if graph_preset == "custom" and graph_custom_text:
+            from core.personas import Persona
+            persona = Persona(text=graph_custom_text, format_hint="")
+        elif graph_preset:
+            persona = get_preset(graph_preset) or PROFESSIONAL
+        else:
+            persona = get_preset(mode or self.config.output_mode) or PROFESSIONAL
+
         prompt = {
             **prompt,
             "system": f"{persona.text}\n\n{prompt['system']}",

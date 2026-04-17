@@ -1,0 +1,6 @@
+{
+  "active": "default",
+  "profiles": {
+    "default": { "preset": "professional", "custom_text": "" }
+  }
+}

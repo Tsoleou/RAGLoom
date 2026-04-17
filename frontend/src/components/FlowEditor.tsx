@@ -290,12 +290,48 @@ export function FlowEditor() {
     setSelectedNodeId(null);
   }, [setNodes, setEdges]);
 
-  const handleLoadDefault = useCallback(() => {
-    const pipeline = buildDefaultPipeline();
-    setNodes(pipeline.nodes);
-    setEdges(pipeline.edges);
-    setSelectedNodeId(null);
-  }, [setNodes, setEdges]);
+  const [savedProfiles, setSavedProfiles] = useState<Record<string, { preset: string; custom_text: string }>>({});
+
+  useEffect(() => {
+    fetch("/api/profiles")
+      .then((r) => r.json())
+      .then((data) => setSavedProfiles(data.profiles ?? {}))
+      .catch(() => {});
+  }, []);
+
+  const handleSaveProfile = useCallback(async (name: string) => {
+    const sysNode = nodes.find((n) => n.data.typeId === "system_prompt");
+    const preset = String(sysNode?.data.params.preset ?? "professional");
+    const custom_text = String(sysNode?.data.params.text ?? "");
+    await fetch("/api/profiles", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, preset, custom_text }),
+    });
+    setSavedProfiles((prev) => ({ ...prev, [name]: { preset, custom_text } }));
+  }, [nodes]);
+
+  const handleLoadProfile = useCallback((name: string) => {
+    const profile = savedProfiles[name];
+    if (!profile) return;
+    setNodes((nds) =>
+      nds.map((n) =>
+        n.data.typeId === "system_prompt"
+          ? {
+              ...n,
+              data: {
+                ...n.data,
+                params: {
+                  ...n.data.params,
+                  preset: profile.preset,
+                  text: profile.custom_text,
+                },
+              },
+            }
+          : n
+      )
+    );
+  }, [savedProfiles, setNodes]);
 
   // ── Selected node data ──────────────────────────────────────
 
@@ -371,7 +407,9 @@ export function FlowEditor() {
           onRun={handleRun}
           onCancel={cancel}
           onClear={handleClear}
-          onLoadDefault={handleLoadDefault}
+          onSaveProfile={handleSaveProfile}
+          profiles={savedProfiles}
+          onLoadProfile={handleLoadProfile}
         />
 
         <div className="flex-1 relative" ref={reactFlowWrapper}>

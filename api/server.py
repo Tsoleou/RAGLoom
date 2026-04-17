@@ -11,10 +11,24 @@ FastAPI Server。
 import asyncio
 import json
 from contextlib import asynccontextmanager
+from pathlib import Path
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+
+# ── Profile storage ────────────────────────────────────────────────
+_PROFILES_PATH = Path("config/chat_profiles.json")
+_DEFAULT_PROFILES = {"active": "default", "profiles": {"default": {"preset": "professional", "custom_text": ""}}}
+
+def _load_profiles() -> dict:
+    if _PROFILES_PATH.exists():
+        return json.loads(_PROFILES_PATH.read_text())
+    return dict(_DEFAULT_PROFILES)
+
+def _save_profiles(data: dict) -> None:
+    _PROFILES_PATH.parent.mkdir(parents=True, exist_ok=True)
+    _PROFILES_PATH.write_text(json.dumps(data, ensure_ascii=False, indent=2))
 
 from api.node_registry import get_node_types_json
 from api.engine import execute_graph
@@ -73,6 +87,16 @@ class ExecuteRequest(BaseModel):
 class ChatQueryRequest(BaseModel):
     message: str
     mode: str = "professional"
+    graph_preset: str | None = None
+    graph_custom_text: str | None = None
+
+class ChatProfileRequest(BaseModel):
+    name: str
+    preset: str
+    custom_text: str = ""
+
+class ActivateProfileRequest(BaseModel):
+    name: str
 
 
 # ── REST Endpoints ─────────────────────────────────────────────────
@@ -136,7 +160,12 @@ def chat_query(req: ChatQueryRequest):
         }
 
     try:
-        result = chat_pipe.query(req.message, mode=req.mode)
+        result = chat_pipe.query(
+            req.message,
+            mode=req.mode,
+            graph_preset=req.graph_preset or None,
+            graph_custom_text=req.graph_custom_text or None,
+        )
         threshold = chat_pipe.config.score_threshold
         retrieval = [
             {
@@ -157,6 +186,44 @@ def chat_query(req: ChatQueryRequest):
         }
     except Exception as e:
         return {"status": "error", "message": str(e)}
+
+
+@app.get("/api/profiles")
+def get_profiles():
+    """Return all profiles and the active profile name."""
+    return _load_profiles()
+
+@app.post("/api/profiles")
+def save_profile(req: ChatProfileRequest):
+    """Create or overwrite a named profile."""
+    data = _load_profiles()
+    data["profiles"][req.name] = {"preset": req.preset, "custom_text": req.custom_text}
+    _save_profiles(data)
+    return {"status": "ok", "name": req.name}
+
+@app.post("/api/profiles/activate")
+def activate_profile(req: ActivateProfileRequest):
+    """Set the active profile."""
+    data = _load_profiles()
+    if req.name not in data["profiles"]:
+        raise HTTPException(status_code=404, detail=f"Profile '{req.name}' not found")
+    data["active"] = req.name
+    _save_profiles(data)
+    return {"status": "ok", "active": req.name}
+
+@app.delete("/api/profiles/{name}")
+def delete_profile(name: str):
+    """Delete a profile (cannot delete 'default')."""
+    if name == "default":
+        raise HTTPException(status_code=400, detail="Cannot delete the default profile")
+    data = _load_profiles()
+    if name not in data["profiles"]:
+        raise HTTPException(status_code=404, detail=f"Profile '{name}' not found")
+    del data["profiles"][name]
+    if data["active"] == name:
+        data["active"] = "default"
+    _save_profiles(data)
+    return {"status": "ok"}
 
 
 @app.post("/api/chat/reset")

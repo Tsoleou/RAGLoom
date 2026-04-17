@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Send, X, Database, ChevronDown, ChevronUp } from "lucide-react";
+import { Send, X, Database, ChevronDown, ChevronUp, Trash2 } from "lucide-react";
 import { RobotAvatar } from "./RobotAvatar";
 import {
   parseChatbotOutput,
@@ -37,6 +37,16 @@ interface QueryResponse {
   blocked_reason?: string;
 }
 
+interface Profile {
+  preset: string;
+  custom_text: string;
+}
+
+interface ProfilesResponse {
+  active: string;
+  profiles: Record<string, Profile>;
+}
+
 const SUGGESTED_QUESTIONS = [
   "StarForge X1 的散熱系統是什麼？",
   "推薦一台最適合創作者的筆電",
@@ -66,11 +76,43 @@ export function ChatView() {
   const [threshold, setThreshold] = useState<number | null>(null);
   const [topK, setTopK] = useState<number | null>(null);
   const [showRetrieval, setShowRetrieval] = useState(false);
+  const [profiles, setProfiles] = useState<Record<string, Profile>>({ default: { preset: "professional", custom_text: "" } });
+  const [activeProfile, setActiveProfile] = useState<string>("default");
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
   }, [messages, loading]);
+
+  // Load profiles on mount
+  useEffect(() => {
+    fetch("/api/profiles")
+      .then((r) => r.json())
+      .then((data: ProfilesResponse) => {
+        setProfiles(data.profiles);
+        setActiveProfile(data.active);
+      })
+      .catch(() => {});
+  }, []);
+
+  async function handleActivateProfile(name: string) {
+    await fetch("/api/profiles/activate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name }),
+    });
+    setActiveProfile(name);
+  }
+
+  async function handleDeleteProfile(name: string) {
+    await fetch(`/api/profiles/${name}`, { method: "DELETE" });
+    const updated = { ...profiles };
+    delete updated[name];
+    setProfiles(updated);
+    if (activeProfile === name) {
+      setActiveProfile("default");
+    }
+  }
 
   async function handleIngest() {
     setLoading(true);
@@ -103,10 +145,16 @@ export function ChatView() {
     setAvatarState("think");
     setAvatarMessage("Searching...");
     try {
+      const activeProf = profiles[activeProfile];
       const res = await fetch("/api/chat/query", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: text, mode }),
+        body: JSON.stringify({
+          message: text,
+          mode,
+          graph_preset: activeProfile !== "default" ? activeProf?.preset : undefined,
+          graph_custom_text: activeProfile !== "default" ? activeProf?.custom_text : undefined,
+        }),
       });
       const data: QueryResponse = await res.json();
       if (data.status === "ok" && data.reply !== undefined) {
@@ -206,7 +254,37 @@ export function ChatView() {
           {loaded ? "Reload KB" : "Load KB"}
         </button>
 
-        {/* Pill mode toggle */}
+        {/* Profile selector */}
+        <div>
+          <div className="text-[10px] uppercase tracking-widest text-[#555] mb-2">Profile</div>
+          <div className="flex flex-col gap-1">
+            {Object.keys(profiles).map((name) => (
+              <div
+                key={name}
+                className={`flex items-center justify-between px-2 py-1.5 rounded text-xs cursor-pointer transition-colors ${
+                  name === activeProfile
+                    ? "bg-[#0d2a25] border border-[#00ccaa]/40 text-[#00ccaa]"
+                    : "border border-transparent text-[#555] hover:text-[#888] hover:bg-[#1a1a1a]"
+                }`}
+                onClick={() => handleActivateProfile(name)}
+              >
+                <span className="truncate">{name}</span>
+                {name !== "default" && (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); handleDeleteProfile(name); }}
+                    className="ml-1 text-[#333] hover:text-[#888] transition-colors flex-shrink-0"
+                    title={`Delete "${name}"`}
+                  >
+                    <Trash2 size={11} />
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Pill mode toggle — shown as fallback when active profile is default */}
+        {activeProfile === "default" && (
         <div>
           <div className="text-[10px] uppercase tracking-widest text-[#555] mb-2">Output Mode</div>
           <div className="flex rounded-md border border-[#2a2a2a] overflow-hidden text-xs">
@@ -225,6 +303,7 @@ export function ChatView() {
             ))}
           </div>
         </div>
+        )}
 
         {threshold !== null && (
           <div className="text-[10px] text-[#444] mt-auto font-mono">
