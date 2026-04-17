@@ -302,7 +302,7 @@ def execute_generator(inputs: dict, params: dict) -> dict:
         prompt=final_prompt,
         model=model,
         format_type=format_type,
-        context=[],
+        messages=[],
         base_url=settings.ollama_base_url,
     )
 
@@ -357,7 +357,7 @@ def execute_output_critic(inputs: dict, params: dict) -> dict:
     # Wrap the (possibly revised) text back into a GenerationResult
     new_answer = GenerationResult(
         text=final_text,
-        context=answer.context if hasattr(answer, "context") else [],
+        messages=answer.messages if hasattr(answer, "messages") else [],
         model=answer.model if hasattr(answer, "model") else model,
     )
 

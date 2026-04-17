@@ -35,6 +35,13 @@ interface QueryResponse {
   blocked_reason?: string;
 }
 
+const SUGGESTED_QUESTIONS = [
+  "StarForge X1 的散熱系統是什麼？",
+  "推薦一台最適合創作者的筆電",
+  "NovaPad Pro 跟 NovaPad Ultra 有什麼差別？",
+  "VisionBook 的螢幕規格是什麼？",
+];
+
 export function ChatView() {
   const [avatarState, setAvatarState] = useState<AvatarState>("idle");
   const [avatarMessage, setAvatarMessage] = useState("");
@@ -46,11 +53,12 @@ export function ChatView() {
   const [retrieval, setRetrieval] = useState<RetrievalRow[]>([]);
   const [threshold, setThreshold] = useState<number | null>(null);
   const [topK, setTopK] = useState<number | null>(null);
+  const [showRetrieval, setShowRetrieval] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
-  }, [messages]);
+  }, [messages, loading]);
 
   async function handleIngest() {
     setLoading(true);
@@ -75,14 +83,8 @@ export function ChatView() {
     }
   }
 
-  async function handleSend() {
-    const text = input.trim();
-    if (!text || loading) return;
-    if (!loaded) {
-      setAvatarState("error");
-      setAvatarMessage("Load KB first");
-      return;
-    }
+  async function handleSendText(text: string) {
+    if (!text || loading || !loaded) return;
     setMessages((m) => [...m, { role: "user", content: text }]);
     setInput("");
     setLoading(true);
@@ -158,10 +160,15 @@ export function ChatView() {
     }
   }
 
+  async function handleSend() {
+    await handleSendText(input.trim());
+  }
+
   async function handleClear() {
     await fetch("/api/chat/reset", { method: "POST" });
     setMessages([]);
     setRetrieval([]);
+    setShowRetrieval(false);
     setAvatarState("idle");
     setAvatarMessage("");
   }
@@ -219,10 +226,23 @@ export function ChatView() {
         {/* Messages */}
         <div ref={scrollRef} className="flex-1 overflow-y-auto p-6 space-y-4">
           {messages.length === 0 && (
-            <div className="text-[#555] text-sm text-center mt-10">
-              {loaded
-                ? "Ask a question about the knowledge base..."
-                : "Load the knowledge base to start chatting."}
+            <div className="flex flex-col items-center gap-4 mt-16 px-6">
+              <div className="text-[#555] text-sm">
+                {loaded ? "Try asking..." : "Load the knowledge base to start chatting."}
+              </div>
+              {loaded && (
+                <div className="flex flex-col gap-2 w-full max-w-md">
+                  {SUGGESTED_QUESTIONS.map((q) => (
+                    <button
+                      key={q}
+                      onClick={() => handleSendText(q)}
+                      className="text-left px-4 py-2.5 rounded-lg border border-[#333] bg-[#222] hover:bg-[#2a2a2a] hover:border-[#e07830]/40 text-sm text-[#aaa] hover:text-[#e0e0e0] transition-colors"
+                    >
+                      {q}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           )}
           {messages.map((m, i) => {
@@ -269,6 +289,21 @@ export function ChatView() {
               </div>
             );
           })}
+
+          {/* Typing indicator */}
+          {loading && messages.some((m) => m.role === "user") && (
+            <div className="flex justify-start">
+              <div className="bg-[#252525] border border-[#333] px-4 py-3 rounded-lg flex items-center gap-1">
+                {[0, 150, 300].map((delay) => (
+                  <span
+                    key={delay}
+                    className="w-1.5 h-1.5 rounded-full bg-[#888] animate-bounce"
+                    style={{ animationDelay: `${delay}ms` }}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Input */}
@@ -298,42 +333,52 @@ export function ChatView() {
           </button>
         </div>
 
-        {/* Retrieval table */}
+        {/* Retrieval panel */}
         {retrieval.length > 0 && (
-          <div className="border-t border-[#2a2a2a] p-4 max-h-56 overflow-y-auto">
-            <div className="text-xs text-[#aaa] mb-2">Retrieval Details</div>
-            <table className="w-full text-[11px] font-mono">
-              <thead className="text-[#666]">
-                <tr className="border-b border-[#2a2a2a]">
-                  <th className="text-left py-1 pr-2">#</th>
-                  <th className="text-left py-1 pr-2">Source</th>
-                  <th className="text-right py-1 pr-2">Score</th>
-                  <th className="text-right py-1 pr-2">Dist</th>
-                  <th className="text-center py-1 pr-2">Pass</th>
-                  <th className="text-left py-1">Chunk</th>
-                </tr>
-              </thead>
-              <tbody>
-                {retrieval.map((r, i) => (
-                  <tr key={i} className="border-b border-[#222]">
-                    <td className="py-1 pr-2 text-[#666]">{i + 1}</td>
-                    <td className="py-1 pr-2 text-[#aaa]">{r.source}</td>
-                    <td className="py-1 pr-2 text-right">{r.score}</td>
-                    <td className="py-1 pr-2 text-right text-[#666]">{r.distance}</td>
-                    <td className="py-1 pr-2 text-center">
-                      {r.passed ? (
-                        <span className="text-[#5fbf5f]">Y</span>
-                      ) : (
-                        <span className="text-[#666]">N</span>
-                      )}
-                    </td>
-                    <td className="py-1 text-[#888] truncate max-w-[300px]">
-                      {r.preview.slice(0, 80)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="border-t border-[#2a2a2a]">
+            <button
+              onClick={() => setShowRetrieval((v) => !v)}
+              className="w-full flex items-center justify-between px-4 py-2 text-[#555] hover:text-[#888] hover:bg-[#1e1e1e] transition-colors text-xs font-mono"
+            >
+              <span>Retrieval Details · {retrieval.length} chunks</span>
+              <span>{showRetrieval ? "▴" : "▾"}</span>
+            </button>
+            {showRetrieval && (
+              <div className="px-4 pb-4 max-h-52 overflow-y-auto">
+                <table className="w-full text-[11px] font-mono">
+                  <thead className="text-[#666]">
+                    <tr className="border-b border-[#2a2a2a]">
+                      <th className="text-left py-1 pr-2">#</th>
+                      <th className="text-left py-1 pr-2">Source</th>
+                      <th className="text-right py-1 pr-2">Score</th>
+                      <th className="text-right py-1 pr-2">Dist</th>
+                      <th className="text-center py-1 pr-2">Pass</th>
+                      <th className="text-left py-1">Chunk</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {retrieval.map((r, i) => (
+                      <tr key={i} className="border-b border-[#222]">
+                        <td className="py-1 pr-2 text-[#666]">{i + 1}</td>
+                        <td className="py-1 pr-2 text-[#aaa]">{r.source}</td>
+                        <td className="py-1 pr-2 text-right">{r.score}</td>
+                        <td className="py-1 pr-2 text-right text-[#666]">{r.distance}</td>
+                        <td className="py-1 pr-2 text-center">
+                          {r.passed ? (
+                            <span className="text-[#5fbf5f]">Y</span>
+                          ) : (
+                            <span className="text-[#666]">N</span>
+                          )}
+                        </td>
+                        <td className="py-1 text-[#888] truncate max-w-[300px]">
+                          {r.preview.slice(0, 80)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         )}
       </section>

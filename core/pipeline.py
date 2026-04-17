@@ -5,7 +5,6 @@ RAG Pipeline 整合模組。
 提供 ingest（建立知識庫）和 query（問答）兩個主要操作。
 """
 
-import shutil
 from typing import Optional
 
 from config.settings import Settings
@@ -36,7 +35,7 @@ class RAGPipeline:
         self.config = config or Settings()
         self.client = get_client(self.config.chroma_persist_path)
         self.collection = create_collection(self.client)
-        self._context = []  # Ollama 多輪對話 context tokens
+        self._messages = []  # Ollama 多輪對話歷史（user + assistant，不含 system）
         self._last_retrieval = []  # 最近一次檢索結果
         # Always-on reference data (product comparison tables, etc.)
         self._reference_data = load_reference_text("./knowledge_base/_reference")
@@ -145,17 +144,23 @@ class RAGPipeline:
             "system": f"{persona.text}\n\n{prompt['system']}",
         }
 
+        # For plain-text mode: reinforce language matching in the user turn.
+        # JSON mode already anchors instruction-following via Ollama's format constraint.
+        # This append is language-agnostic — no detection needed.
+        if not persona.format_hint:
+            prompt = {**prompt, "user": prompt["user"] + "\n\n(Respond in the same language as this question.)"}
+
         # 4. Generate
         generation = generate(
             prompt=prompt,
             model=self.config.llm_model,
             format_type=persona.format_hint,
-            context=self._context,
+            messages=self._messages,
             base_url=self.config.ollama_base_url,
         )
 
-        # 更新多輪對話 context
-        self._context = generation.context
+        # 更新多輪對話歷史
+        self._messages = generation.messages
 
         return generation
 
@@ -164,12 +169,12 @@ class RAGPipeline:
         name = self.collection.name
         delete_collection(self.client, name)
         self.collection = create_collection(self.client)
-        self._context = []
+        self._messages = []
         self._last_retrieval = []
         print(f"[Pipeline] Collection '{name}' reset")
 
     def reset_conversation(self) -> None:
         """清除多輪對話 context（不影響知識庫）。"""
-        self._context = []
+        self._messages = []
         self._last_retrieval = []
         print("[Pipeline] Conversation context cleared")
