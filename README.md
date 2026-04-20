@@ -49,7 +49,11 @@ Query:   Question → Guardrail → Retriever ───────────�
 
 **Chat UI** — for end users. Type a question, get a formatted answer with a retrieval details panel showing which document chunks were used. Blocked queries surface with an amber `⊘ Blocked by Guardrail` label. In chatbot mode, the avatar reflects the LLM's self-reported emotion from the structured JSON output. Replies are always in the visitor's language.
 
+![Chat UI](doc/images/screenshot-chat.png)
+
 **Node Editor** — for builders and operators. Drag-and-drop pipeline editor with fourteen node types including `Guardrail`, `SystemPrompt`, `OutputCritic`, `ReferenceLoader`, and `ProductSelector`. Real-time per-node execution status over WebSocket. The `ResultDisplay` node smart-renders chatbot JSON into an emotion badge plus reply text. A **Load Default** button restores the default 13-node pipeline at any time.
+
+![Node Editor](doc/images/screenshot-editor.png)
 
 ## Requirements
 

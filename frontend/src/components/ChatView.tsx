@@ -47,11 +47,19 @@ interface ProfilesResponse {
   profiles: Record<string, Profile>;
 }
 
+const RAG_LOOM_ASCII = `\
+██████╗  █████╗  ██████╗ ██╗      ██████╗  ██████╗ ███╗   ███╗
+██╔══██╗██╔══██╗██╔════╝ ██║     ██╔═══██╗██╔═══██╗████╗ ████║
+██████╔╝███████║██║  ███╗██║     ██║   ██║██║   ██║██╔████╔██║
+██╔══██╗██╔══██║██║   ██║██║     ██║   ██║██║   ██║██║╚██╔╝██║
+██║  ██║██║  ██║╚██████╔╝███████╗╚██████╔╝╚██████╔╝██║ ╚═╝ ██║
+╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝ ╚══════╝ ╚═════╝  ╚═════╝ ╚═╝     ╚═╝`;
+
 const SUGGESTED_QUESTIONS = [
-  "StarForge X1 的散熱系統是什麼？",
-  "推薦一台最適合創作者的筆電",
-  "NovaPad Pro 跟 NovaPad Ultra 有什麼差別？",
-  "VisionBook 的螢幕規格是什麼？",
+  "What cooling system does the StarForge X1 use?",
+  "Which laptop do you recommend for creators?",
+  "What's the difference between NovaPad Pro and NovaPad Ultra?",
+  "What are the display specs of the VisionBook?",
 ];
 
 const chipVariants = {
@@ -70,8 +78,12 @@ export function ChatView() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [mode, setMode] = useState<Mode>("professional");
-  const [loaded, setLoaded] = useState(false);
-  const [loading, setLoading] = useState(false);
+  type KBStatus = "idle" | "loading" | "loaded" | "error";
+  const [kbStatus, setKbStatus] = useState<KBStatus>("idle");
+  const [kbChunks, setKbChunks] = useState<number | null>(null);
+  const [kbError, setKbError] = useState<string | null>(null);
+  const [chatLoading, setChatLoading] = useState(false);
+  const loaded = kbStatus === "loaded";
   const [retrieval, setRetrieval] = useState<RetrievalRow[]>([]);
   const [threshold, setThreshold] = useState<number | null>(null);
   const [topK, setTopK] = useState<number | null>(null);
@@ -82,7 +94,7 @@ export function ChatView() {
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
-  }, [messages, loading]);
+  }, [messages, chatLoading]);
 
   // Load profiles on mount
   useEffect(() => {
@@ -115,33 +127,30 @@ export function ChatView() {
   }
 
   async function handleIngest() {
-    setLoading(true);
-    setAvatarState("think");
-    setAvatarMessage("Loading KB...");
+    setKbStatus("loading");
+    setKbError(null);
+    setKbChunks(null);
     try {
       const res = await fetch("/api/chat/ingest", { method: "POST" });
       const data = await res.json();
       if (data.status === "ok") {
-        setLoaded(true);
-        setAvatarState("happy");
-        setAvatarMessage(`Loaded ${data.chunks} chunks`);
+        setKbStatus("loaded");
+        setKbChunks(data.chunks ?? null);
       } else {
-        setAvatarState("error");
-        setAvatarMessage(data.message || "Failed");
+        setKbStatus("error");
+        setKbError(data.message || "Ingest failed");
       }
     } catch (e) {
-      setAvatarState("error");
-      setAvatarMessage(String(e));
-    } finally {
-      setLoading(false);
+      setKbStatus("error");
+      setKbError(String(e));
     }
   }
 
   async function handleSendText(text: string) {
-    if (!text || loading || !loaded) return;
+    if (!text || chatLoading || !loaded) return;
     setMessages((m) => [...m, { role: "user", content: text }]);
     setInput("");
-    setLoading(true);
+    setChatLoading(true);
     setAvatarState("think");
     setAvatarMessage("Searching...");
     try {
@@ -212,7 +221,7 @@ export function ChatView() {
       setAvatarState("error");
       setAvatarMessage(String(e));
     } finally {
-      setLoading(false);
+      setChatLoading(false);
     }
   }
 
@@ -225,6 +234,9 @@ export function ChatView() {
     setMessages([]);
     setRetrieval([]);
     setShowRetrieval(false);
+    setKbStatus("idle");
+    setKbChunks(null);
+    setKbError(null);
     setAvatarState("idle");
     setAvatarMessage("");
   }
@@ -246,8 +258,7 @@ export function ChatView() {
 
         <button
           onClick={handleIngest}
-          disabled={loading}
-          style={loading ? { animation: "glow-pulse 1.5s ease-in-out infinite" } : undefined}
+          disabled={kbStatus === "loading"}
           className="flex items-center justify-center gap-2 px-3 py-2 bg-[#e07830] hover:bg-[#f08840] disabled:opacity-50 text-white text-sm rounded transition-colors"
         >
           <Database size={14} />
@@ -316,11 +327,84 @@ export function ChatView() {
       <section className="flex-1 flex flex-col">
         {/* Messages */}
         <div ref={scrollRef} className="flex-1 overflow-y-auto p-6 space-y-4">
-          {messages.length === 0 && (
-            <div className="flex flex-col items-center gap-4 mt-16 px-6">
-              <div className="text-[#444] text-sm tracking-wide">
-                {loaded ? "Try asking..." : "Load the knowledge base to start."}
+          {/* CLI Title — always first, pushed up as messages accumulate */}
+          <div className="flex flex-col items-center py-8">
+            <pre
+              className="text-[9px] leading-[1.25] select-none overflow-x-auto"
+              style={{
+                color: "rgba(0,204,170,0.75)",
+                textShadow: "0 0 10px rgba(0,204,170,0.55), 0 0 24px rgba(0,204,170,0.2)",
+                fontFamily: '"Courier New", Courier, monospace',
+                letterSpacing: 0,
+              }}
+            >
+              {RAG_LOOM_ASCII}
+            </pre>
+            <div
+              className="mt-3 font-mono text-[10px] tracking-[0.25em] uppercase"
+              style={{ color: "rgba(0,204,170,0.35)" }}
+            >
+              Local RAG Pipeline
+            </div>
+            <div className="mt-1 font-mono text-[10px] text-[#2a2a2a] flex gap-2">
+              <span>ollama/gemma3:4b</span>
+              <span>·</span>
+              <span>nomic-embed-text</span>
+              <span>·</span>
+              <span>chromadb</span>
+            </div>
+            <div className="mt-3 font-mono text-[11px]" style={{ color: "rgba(0,204,170,0.45)" }}>
+              {">"}{" "}
+              {loaded ? "Knowledge base loaded. Ready." : "Awaiting knowledge base..."}
+            </div>
+          </div>
+
+          {/* KB Status Block — CLI terminal receipt */}
+          {kbStatus !== "idle" && (
+            <div className="flex justify-center">
+              <div
+                className="w-full max-w-md font-mono text-[11px] border border-[#1a3030] rounded px-4 py-3 space-y-1"
+                style={{ background: "rgba(0,20,18,0.6)" }}
+              >
+                <div className="text-[#00ccaa]/40 mb-2">{"─".repeat(3)} kb ingest {"─".repeat(28)}</div>
+                {kbStatus === "loading" && (
+                  <div className="flex items-center gap-2 text-[#00ccaa]/70">
+                    <span>{">"} loading knowledge base</span>
+                    <span className="flex items-center gap-0.5">
+                      {[0, 150, 300].map((delay) => (
+                        <span
+                          key={delay}
+                          className="w-1 h-1 rounded-full bg-[#00ccaa] animate-bounce"
+                          style={{ animationDelay: `${delay}ms`, boxShadow: "0 0 4px rgba(0,204,170,0.6)" }}
+                        />
+                      ))}
+                    </span>
+                  </div>
+                )}
+                {kbStatus === "loaded" && (
+                  <>
+                    <div className="text-[#00ccaa]/70">{">"} indexing complete</div>
+                    {kbChunks !== null && (
+                      <div className="text-[#00ccaa]">{"  "}[OK] {kbChunks} chunks loaded</div>
+                    )}
+                    <div className="text-[#00ccaa]/40">{">"} ready for queries</div>
+                  </>
+                )}
+                {kbStatus === "error" && (
+                  <>
+                    <div className="text-[#ff5566]/80">{">"} ingest failed</div>
+                    {kbError && (
+                      <div className="text-[#ff5566] border-l-2 border-[#ff5566]/40 pl-2">[FAIL] {kbError}</div>
+                    )}
+                    <div className="text-[#555]">{">"} check data directory and retry</div>
+                  </>
+                )}
               </div>
+            </div>
+          )}
+
+          {messages.length === 0 && (
+            <div className="flex flex-col items-center gap-4 px-6">
               {loaded && (
                 <motion.div
                   className="flex flex-col gap-2 w-full max-w-md"
@@ -396,7 +480,7 @@ export function ChatView() {
           </AnimatePresence>
 
           {/* Typing indicator */}
-          {loading && messages.some((m) => m.role === "user") && (
+          {chatLoading && messages.some((m) => m.role === "user") && (
             <motion.div
               initial={{ opacity: 0, x: -12 }}
               animate={{ opacity: 1, x: 0 }}
@@ -425,7 +509,7 @@ export function ChatView() {
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={onKeyDown}
             placeholder="e.g. What cooling tech does StarForge X1 use?"
-            rows={2}
+            rows={3}
             className="flex-1 bg-[#1a1a1a] border border-[#2a2a2a] rounded px-3 py-2 text-sm resize-none focus:outline-none focus:border-[#00ccaa] transition-all"
             style={{ boxShadow: "none" }}
             onFocus={(e) => (e.currentTarget.style.boxShadow = "0 0 8px rgba(0,204,170,0.2)")}
@@ -433,14 +517,14 @@ export function ChatView() {
           />
           <button
             onClick={handleSend}
-            disabled={loading || !input.trim()}
+            disabled={chatLoading || !input.trim()}
             className="px-4 py-2 bg-[#e07830] hover:bg-[#f08840] hover:shadow-[0_0_10px_rgba(224,120,48,0.4)] disabled:opacity-40 text-white text-sm rounded self-stretch transition-all flex items-center justify-center"
           >
             <Send size={15} />
           </button>
           <button
             onClick={handleClear}
-            disabled={loading}
+            disabled={chatLoading}
             title="Clear chat history and reset memory"
             className="px-3 py-2 border border-[#2a2a2a] hover:bg-[#1a1a1a] hover:border-[#00ccaa]/30 hover:text-[#888] disabled:opacity-40 text-[#555] text-sm rounded self-stretch transition-colors flex items-center gap-1.5 whitespace-nowrap"
           >
