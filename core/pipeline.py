@@ -148,16 +148,17 @@ class RAGPipeline:
         else:
             persona = get_preset(mode or self.config.output_mode) or PROFESSIONAL
 
+        # Triple-anchor language: persona LANGUAGE rule (front), KB context (middle),
+        # explicit reminder (back) — small models like gemma3:4b lose the front rule
+        # when KB content is heavy. Per-turn user-side hint is added in generator.
         prompt = {
             **prompt,
-            "system": f"{persona.text}\n\n{prompt['system']}",
+            "system": (
+                f"{persona.text}\n\n"
+                f"{prompt['system']}\n\n"
+                "LANGUAGE REMINDER: Reply strictly in the same language as the visitor's question. Never switch languages."
+            ),
         }
-
-        # For plain-text mode: reinforce language matching in the user turn.
-        # JSON mode already anchors instruction-following via Ollama's format constraint.
-        # This append is language-agnostic — no detection needed.
-        if not persona.format_hint:
-            prompt = {**prompt, "user": prompt["user"] + "\n\n(Respond in the same language as this question.)"}
 
         # 4. Generate
         generation = generate(

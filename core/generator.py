@@ -4,9 +4,15 @@ LLM 生成模組。
 呼叫 Ollama /api/chat 生成回答，支援 text / json 輸出格式與多輪對話 messages。
 """
 
+import re
 import requests
 from dataclasses import dataclass, field
 from typing import List, Optional
+
+
+def _detect_language(text: str) -> str:
+    """Return 'Chinese' if the text contains any CJK character, else 'English'."""
+    return "Chinese" if re.search(r"[一-鿿]", text) else "English"
 
 
 @dataclass
@@ -42,11 +48,16 @@ def generate(
     """
     url = f"{base_url}/api/chat"
 
+    # Anchor language on every turn — overrides multi-turn history bias when
+    # the user switches languages, applies regardless of JSON / text format.
+    lang = _detect_language(prompt["user"])
+    user_content = f"{prompt['user']}\n\n(Respond in {lang}.)"
+
     # System message always goes first; previous turns follow; new user turn last
     all_messages = [{"role": "system", "content": prompt["system"]}]
     if messages:
         all_messages.extend(messages)
-    all_messages.append({"role": "user", "content": prompt["user"]})
+    all_messages.append({"role": "user", "content": user_content})
 
     payload = {
         "model": model,

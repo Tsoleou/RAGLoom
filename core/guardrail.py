@@ -43,8 +43,9 @@ def check_query(
 ) -> tuple[bool, str, str]:
     """Check whether a user query should be blocked.
 
-    Matching uses word boundaries so short keywords like "hp" don't false-match
-    inside words like "chapter".
+    Matching uses ASCII word boundaries so short keywords like "hp" don't
+    false-match inside ASCII words, while CJK characters (which are \w under
+    Unicode) still count as boundaries — otherwise "asus筆電" wouldn't match.
 
     Args:
         query: The user's question.
@@ -66,7 +67,7 @@ def check_query(
         kw_lower = kw.strip().lower()
         if not kw_lower:
             continue
-        if re.search(rf"\b{re.escape(kw_lower)}\b", lower):
+        if re.search(rf"\b{re.escape(kw_lower)}\b", lower, flags=re.ASCII):
             return False, refusal_message, kw_lower
 
     return True, "", ""
