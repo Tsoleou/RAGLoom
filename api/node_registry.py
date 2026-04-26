@@ -169,15 +169,22 @@ _register(NodeType(
     type_id="product_selector",
     label="Product Selector",
     label_en="ProductSelector",
-    description="Use a small LLM pass to classify the query against a product reference table and emit a single product_id. Connect its output into Retriever to scope retrieval to one product. Empty output means no clear match (falls back to broad search).",
+    description=(
+        "Classify the query to a single product_id, then feed it into Retriever to scope retrieval. "
+        "Two modes: 'rule' uses fast string matching against product_ids in the collection (zero LLM latency, "
+        "needs the collection input). 'llm' uses a small LLM pass against a product reference table "
+        "(needs the reference_data input). Empty output means no clear match — Retriever falls back to broad search."
+    ),
     category="query",
     inputs=[
         Port("query", "query", "Query Text"),
+        Port("collection", "collection", "Collection"),
         Port("reference_data", "reference", "Reference Data"),
     ],
     outputs=[Port("product_id", "product_id", "Product ID")],
     params=[
-        ParamDef("model", "Model", "string", "gemma3:4b"),
+        ParamDef("mode", "Mode", "select", "rule", options=["rule", "llm"]),
+        ParamDef("model", "Model (LLM mode)", "string", "gemma3:4b"),
     ],
 ))
 

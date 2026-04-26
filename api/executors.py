@@ -25,6 +25,7 @@ from core.critic import critique_answer, revise_answer
 from core.generator import GenerationResult
 from core.personas import get_preset
 from core.product_selector import select_product
+from core.product_matcher import detect_product_filter
 import json
 
 
@@ -165,20 +166,43 @@ def execute_guardrail(inputs: dict, params: dict) -> dict:
 
 
 def execute_product_selector(inputs: dict, params: dict) -> dict:
-    """Classify a query to a single product_id via a small LLM pass."""
+    """Classify a query to a single product_id.
+
+    Two modes:
+      - rule (default): string match the query against product_ids derived
+        from collection metadata. Zero LLM latency. Needs `collection` input.
+      - llm: small LLM pass against a reference table. Needs `reference_data`
+        input. Slower but can resolve ambiguous phrasing the rule matcher misses.
+    """
     query = inputs.get("query", "") or ""
-    reference_data = inputs.get("reference_data", "") or ""
-    model = params.get("model", "gemma3:4b")
-    settings = Settings()
+    mode = params.get("mode", "rule")
 
-    product_id = select_product(
-        query=query,
-        reference_text=reference_data,
-        model=model,
-        base_url=settings.ollama_base_url,
-    )
+    if mode == "rule":
+        collection_info = inputs.get("collection")
+        if not collection_info:
+            return {"product_id": "", "_preview": "(rule mode needs collection input)"}
+        client = get_client(collection_info["client_path"])
+        collection = create_collection(client, name=collection_info["name"])
+        if collection.count() == 0:
+            return {"product_id": "", "_preview": "(empty collection — broad search)"}
+        meta = collection.get(include=["metadatas"])
+        product_ids = {
+            m["product_id"]
+            for m in meta["metadatas"]
+            if m and m.get("product_id")
+        }
+        product_id = detect_product_filter(query, product_ids) or ""
+    else:
+        reference_data = inputs.get("reference_data", "") or ""
+        settings = Settings()
+        product_id = select_product(
+            query=query,
+            reference_text=reference_data,
+            model=params.get("model", "gemma3:4b"),
+            base_url=settings.ollama_base_url,
+        )
 
-    preview = f"product_id='{product_id}'" if product_id else "(none — broad search)"
+    preview = f"[{mode}] product_id='{product_id}'" if product_id else f"[{mode}] (none — broad search)"
     return {
         "product_id": product_id,
         "_preview": preview,

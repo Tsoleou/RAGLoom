@@ -107,15 +107,21 @@ export const NODE_DEFINITIONS: NodeTypeDef[] = [
     typeId: "product_selector",
     label: "Product Selector",
     labelEn: "ProductSelector",
-    description: "Use a small LLM pass to classify the query against a product reference table and emit a single product_id. Connect its output into Retriever to scope retrieval to one product. Empty output means no clear match (falls back to broad search).",
+    description:
+      "Classify the query to a single product_id and feed it into Retriever to scope retrieval. " +
+      "Two modes: 'rule' uses fast string matching against product_ids in the collection (zero LLM latency, " +
+      "needs the collection input). 'llm' uses a small LLM pass against a product reference table " +
+      "(needs the reference_data input). Empty output means no clear match — Retriever falls back to broad search.",
     category: "query",
     inputs: [
       { name: "query", dataType: "query", label: "Query Text" },
+      { name: "collection", dataType: "collection", label: "Collection" },
       { name: "reference_data", dataType: "reference", label: "Reference Data" },
     ],
     outputs: [{ name: "product_id", dataType: "product_id", label: "Product ID" }],
     params: [
-      { name: "model", label: "Model", type: "string", default: "gemma3:4b" },
+      { name: "mode", label: "Mode", type: "select", default: "rule", options: ["rule", "llm"] },
+      { name: "model", label: "Model (LLM mode)", type: "string", default: "gemma3:4b" },
     ],
   },
   {

@@ -13,7 +13,7 @@ Built with Python, FastAPI, React, ChromaDB, and Ollama. No LangChain.
 - **OutputCritic** — an optional second LLM pass that audits the generator's answer against a negative-rules list. `audit` mode labels violations; `revise` mode rewrites the offending answer.
 - **Persona presets** — the `SystemPrompt` node ships with `professional` and `chatbot` presets (plus free-form custom text), both tuned to a trade-show promoter register (2–4 sentences, lead with the hook). The `chatbot` preset emits structured JSON `{reply, emotion}`, which the UI smart-renders as an emotion badge plus a reply bubble with an animated avatar. Replies are always in the visitor's language.
 - **Always-on reference data** — the `ReferenceLoader` node loads a static reference file (e.g. a product comparison CSV) and injects it directly into every prompt, guaranteeing broad coverage for comparison queries independent of vector retrieval results.
-- **Metadata-filtered retrieval** — product documents are tagged with a `product_id` at ingest time (derived from filename). The `Retriever` node accepts a filter parameter to scope retrieval to a single product. The optional `ProductSelector` node uses one small LLM call to classify query intent and feed the filter automatically.
+- **Metadata-filtered retrieval** — product documents are tagged with a `product_id` at ingest time (derived from filename). The `Retriever` node accepts a filter parameter to scope retrieval to a single product. The `ProductSelector` node, included in the default pipeline, classifies query intent in one of two modes — `rule` (fast string matching against the collection's `product_id`s, zero LLM latency) or `llm` (small LLM pass for ambiguous phrasing) — and feeds the filter automatically. Comparison or unrecognized queries fall through to broad search.
 - **Inline editing** — the `QueryInput` node lets you type the question directly on the node; no config panel round-trip.
 
 ## Architecture
@@ -21,10 +21,10 @@ Built with Python, FastAPI, React, ChromaDB, and Ollama. No LangChain.
 ```
 Ingest:  Document → Loader → Chunker → Embedder → VectorStore (ChromaDB)
 
-Query:   Question → Guardrail → Retriever ──────────────► PromptBuilder → Generator → OutputCritic → Answer
-                                    ↑                           ↑               ↑
-                             [ProductSelector]           ReferenceLoader    SystemPrompt
-                              (optional filter)           (always-on ref)  (persona + format)
+Query:   Question → Guardrail → ProductSelector ─product_id─► Retriever → PromptBuilder → Generator → OutputCritic → Answer
+                                  (rule | llm)                                  ↑                ↑
+                                                                       ReferenceLoader      SystemPrompt
+                                                                       (always-on ref)   (persona + format)
 ```
 
 ### Core Modules
@@ -42,6 +42,7 @@ Query:   Question → Guardrail → Retriever ───────────�
 | `core/generator.py` | Calls Ollama LLM for answer generation |
 | `core/critic.py` | Second-pass self-critique (audit / revise modes) |
 | `core/product_selector.py` | LLM-based intent classifier that maps a query to a single `product_id` (or `NONE` for ambiguous/comparison queries) |
+| `core/product_matcher.py` | Rule-based intent classifier — word-boundary regex match (CJK-aware via `re.ASCII`) against `product_id`s. Used by the chat pipeline and the `ProductSelector` node's `rule` mode for zero-latency point-query routing. |
 | `core/pipeline.py` | Orchestrates `ingest()` and `query()` for the chat interface |
 | `config/settings.py` | Dataclass-based config with `.env` override support |
 
@@ -51,7 +52,7 @@ Query:   Question → Guardrail → Retriever ───────────�
 
 ![Chat UI](doc/images/screenshot-chat.png)
 
-**Node Editor** — for builders and operators. Drag-and-drop pipeline editor with fourteen node types including `Guardrail`, `SystemPrompt`, `OutputCritic`, `ReferenceLoader`, and `ProductSelector`. Real-time per-node execution status over WebSocket. The `ResultDisplay` node smart-renders chatbot JSON into an emotion badge plus reply text. A **Load Default** button restores the default 13-node pipeline at any time.
+**Node Editor** — for builders and operators. Drag-and-drop pipeline editor with fourteen node types including `Guardrail`, `SystemPrompt`, `OutputCritic`, `ReferenceLoader`, and `ProductSelector`. Real-time per-node execution status over WebSocket. The `ResultDisplay` node smart-renders chatbot JSON into an emotion badge plus reply text. A **Load Default** button restores the default 14-node pipeline at any time.
 
 ![Node Editor](doc/images/screenshot-editor.png)
 

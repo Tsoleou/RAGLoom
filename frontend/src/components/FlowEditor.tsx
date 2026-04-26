@@ -96,13 +96,19 @@ function buildDefaultPipeline(): { nodes: FlowNode[]; edges: FlowEdge[] } {
   // Reference Loader — below PromptBuilder, always-on product reference
   const refloader = createNodeFromDef(defs["reference_loader"], { x: QUERY_OFFSET + GAP_X * 2, y: ROW_Y_QUERY + 200 });
 
-  const nodes = [loader, chunker, embedder, vstore, qinput, guardrail, retriever, pbuilder, generator, critic, display, sysprompt, refloader];
+  // Product Selector — below Retriever; default mode='rule' (string match against
+  // collection metadata, zero LLM latency). Both collection and reference_data
+  // are pre-wired so the user can flip mode to 'llm' with no re-wiring.
+  const pselector = createNodeFromDef(defs["product_selector"], { x: QUERY_OFFSET + GAP_X, y: ROW_Y_QUERY + 200 });
+
+  const nodes = [loader, chunker, embedder, vstore, qinput, guardrail, retriever, pbuilder, generator, critic, display, sysprompt, refloader, pselector];
 
   const edgeStyle = { strokeWidth: 2, stroke: "#e07830" };
   const sysEdgeStyle = { strokeWidth: 2, stroke: "#70b0d0" };
   const guardEdgeStyle = { strokeWidth: 2, stroke: "#f0a040" };
   const criticEdgeStyle = { strokeWidth: 2, stroke: "#a070d0" };
   const refEdgeStyle = { strokeWidth: 2, stroke: "#60c080" };
+  const selectorEdgeStyle = { strokeWidth: 2, stroke: "#d0a060" };
   const edges: FlowEdge[] = [
     // Ingest chain
     { id: `e-${loader.id}-${chunker.id}`,   source: loader.id,   target: chunker.id,   sourceHandle: "documents",  targetHandle: "documents",  animated: true, style: edgeStyle },
@@ -124,6 +130,11 @@ function buildDefaultPipeline(): { nodes: FlowNode[]; edges: FlowEdge[] } {
     { id: `e-${sysprompt.id}-${generator.id}-fmt`, source: sysprompt.id, target: generator.id, sourceHandle: "format_hint",   targetHandle: "format_hint",   animated: true, style: sysEdgeStyle },
     // Reference Loader → PromptBuilder (green = always-on product reference)
     { id: `e-${refloader.id}-${pbuilder.id}`, source: refloader.id, target: pbuilder.id, sourceHandle: "reference_data", targetHandle: "reference_data", animated: true, style: refEdgeStyle },
+    // Product Selector wiring (tan): query + collection + reference_data into selector, product_id out into retriever
+    { id: `e-${guardrail.id}-${pselector.id}`,  source: guardrail.id, target: pselector.id, sourceHandle: "query_out",      targetHandle: "query",          animated: true, style: selectorEdgeStyle },
+    { id: `e-${vstore.id}-${pselector.id}`,     source: vstore.id,    target: pselector.id, sourceHandle: "collection",     targetHandle: "collection",     animated: true, style: selectorEdgeStyle },
+    { id: `e-${refloader.id}-${pselector.id}`,  source: refloader.id, target: pselector.id, sourceHandle: "reference_data", targetHandle: "reference_data", animated: true, style: selectorEdgeStyle },
+    { id: `e-${pselector.id}-${retriever.id}`,  source: pselector.id, target: retriever.id, sourceHandle: "product_id",     targetHandle: "product_id",     animated: true, style: selectorEdgeStyle },
   ];
 
   return { nodes, edges };

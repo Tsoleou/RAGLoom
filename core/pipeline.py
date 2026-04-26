@@ -21,6 +21,7 @@ from core.retriever import retrieve
 from core.prompt_builder import build_prompt
 from core.generator import generate, GenerationResult
 from core.personas import get_preset, PROFESSIONAL
+from core.product_matcher import detect_product_filter
 
 
 class RAGPipeline:
@@ -39,6 +40,9 @@ class RAGPipeline:
         self._last_retrieval = []  # 最近一次檢索結果
         # Always-on reference data (product comparison tables, etc.)
         self._reference_data = load_reference_text("./knowledge_base/_reference")
+        # Cached at init to avoid scanning collection metadata on every query;
+        # refreshed on ingest / reset since those are the only mutation paths.
+        self._product_ids: set[str] = self._collect_product_ids()
 
         print(f"[Pipeline] Initialized (LLM={self.config.llm_model}, Embedding={self.config.embedding_model})")
 
@@ -92,6 +96,9 @@ class RAGPipeline:
         # 4. Store
         add_chunks(self.collection, all_chunks, embeddings)
 
+        # Refresh product_id cache after ingest so new products become routable
+        self._product_ids = self._collect_product_ids()
+
         print(f"[Pipeline] Ingested {len(all_chunks)} chunks from {len(docs)} documents")
         return len(all_chunks)
 
@@ -117,7 +124,15 @@ class RAGPipeline:
         """
         mode = mode or self.config.output_mode
 
-        # 1. Retrieve
+        # 1. Retrieve — try hard-filter routing first when the query unambiguously
+        # names one product. nomic-embed-text alone can't separate products in a
+        # homogeneous catalog (every chunk looks similar), so the right product
+        # often ranks below 100 even when explicitly named. Filter rescues that.
+        product_id = detect_product_filter(question, self._product_ids)
+        filters = {"product_id": product_id} if product_id else None
+        if product_id:
+            print(f"[Pipeline] Routing to product_id='{product_id}' via hard filter")
+
         results = retrieve(
             query_text=question,
             collection=self.collection,
@@ -126,6 +141,7 @@ class RAGPipeline:
             keyword_boost=self.config.keyword_boost,
             embedding_model=self.config.embedding_model,
             base_url=self.config.ollama_base_url,
+            filters=filters,
         )
 
         self._last_retrieval = results
@@ -181,7 +197,21 @@ class RAGPipeline:
         self.collection = create_collection(self.client)
         self._messages = []
         self._last_retrieval = []
+        self._product_ids = set()
         print(f"[Pipeline] Collection '{name}' reset")
+
+    def _collect_product_ids(self) -> set[str]:
+        """Scan the collection's chunk metadata and return the set of distinct
+        product_id values. Empty when the collection has no ingested products yet.
+        """
+        if self.collection.count() == 0:
+            return set()
+        data = self.collection.get(include=["metadatas"])
+        return {
+            m["product_id"]
+            for m in data["metadatas"]
+            if m and m.get("product_id")
+        }
 
     def reset_conversation(self) -> None:
         """清除多輪對話 context（不影響知識庫）。"""
