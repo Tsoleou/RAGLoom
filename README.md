@@ -16,6 +16,8 @@ Built with Python, FastAPI, React, ChromaDB, and Ollama. No LangChain.
 - **Metadata-filtered retrieval** — product documents are tagged with a `product_id` at ingest time (derived from filename). The `Retriever` node accepts a filter parameter to scope retrieval to a single product. The `ProductSelector` node, included in the default pipeline, classifies query intent in one of two modes — `rule` (fast string matching against the collection's `product_id`s, zero LLM latency) or `llm` (small LLM pass for ambiguous phrasing) — and feeds the filter automatically. Comparison or unrecognized queries fall through to broad search.
 - **Inline editing** — the `QueryInput` node lets you type the question directly on the node; no config panel round-trip.
 
+![Guardrail node — keyword-based block with amber match indicator](doc/images/KeywordGuardrail.png)
+
 ## Architecture
 
 ```
@@ -50,11 +52,15 @@ Query:   Question → Guardrail → ProductSelector ─product_id─► Retrieve
 
 **Chat UI** — for end users. Type a question, get a formatted answer with a retrieval details panel showing which document chunks were used. Blocked queries surface with an amber `⊘ Blocked by Guardrail` label. In chatbot mode, the avatar reflects the LLM's self-reported emotion from the structured JSON output. Replies are always in the visitor's language.
 
-![Chat UI](doc/images/screenshot-chat.png)
+![Chat UI](doc/images/Chatview.png)
 
 **Node Editor** — for builders and operators. Drag-and-drop pipeline editor with fourteen node types including `Guardrail`, `SystemPrompt`, `OutputCritic`, `ReferenceLoader`, and `ProductSelector`. Real-time per-node execution status over WebSocket. The `ResultDisplay` node smart-renders chatbot JSON into an emotion badge plus reply text. A **Load Default** button restores the default 14-node pipeline at any time.
 
-![Node Editor](doc/images/screenshot-editor.png)
+![Node Editor](doc/images/Editorview.png)
+
+When a Guardrail keyword match blocks a query, downstream nodes short-circuit visibly across the graph — a PM can point at the safety layer mid-demo:
+
+![Guardrail blocking downstream nodes across the pipeline](doc/images/guardrails.png)
 
 ## Requirements
 
