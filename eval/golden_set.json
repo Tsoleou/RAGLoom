@@ -1,0 +1,115 @@
+{
+  "version": "1.0",
+  "description": "RAGLoom golden set — manually curated test cases for RAG quality regression. Facts come from product_*.txt files in knowledge_base/.",
+  "cases": [
+    {
+      "id": "starforge_x1_gpu_en",
+      "category": "single_product_spec",
+      "question": "What's the GPU on the StarForge X1?",
+      "expected_product": "starforge_x1",
+      "expected_facts": ["RTX 4070", "8GB"],
+      "expected_language": "English",
+      "match_mode": "all"
+    },
+    {
+      "id": "visionbook_screen_zh",
+      "category": "single_product_spec",
+      "question": "VisionBook 螢幕規格是什麼？",
+      "expected_product": "visionbook",
+      "expected_facts": ["4K", "OLED", "Delta E"],
+      "expected_language": "Chinese",
+      "match_mode": "all"
+    },
+    {
+      "id": "novapad_pro_audience_zh",
+      "category": "single_product_spec",
+      "question": "NovaPad Pro 16 主打什麼客群？",
+      "expected_product": "novapad_pro",
+      "expected_facts": ["學生", "CP"],
+      "expected_language": "Chinese",
+      "match_mode": "any"
+    },
+    {
+      "id": "titanbook_m1_weight_en",
+      "category": "single_product_spec",
+      "question": "How heavy is the TitanBook M1?",
+      "expected_product": "titanbook_m1",
+      "expected_facts": ["1.95"],
+      "expected_language": "English",
+      "match_mode": "all"
+    },
+    {
+      "id": "luminos_pro_15_privacy_zh",
+      "category": "single_product_spec",
+      "question": "Luminos Pro 15 的防窺功能怎麼運作？",
+      "expected_product": "luminos_pro_15",
+      "expected_facts": ["LuminosShield", "60"],
+      "expected_language": "Chinese",
+      "match_mode": "any"
+    },
+    {
+      "id": "starforge_phantom_stealth_en",
+      "category": "single_product_spec",
+      "question": "Tell me about the StarForge Phantom's design.",
+      "expected_product": "starforge_phantom",
+      "expected_facts": ["Stealth", "Matte", "office"],
+      "expected_language": "English",
+      "match_mode": "any"
+    },
+    {
+      "id": "compare_creator_laptop_en",
+      "category": "cross_product",
+      "question": "Which laptop is best for 4K video editing?",
+      "expected_product": null,
+      "expected_facts": ["VisionBook", "OLED"],
+      "expected_language": "English",
+      "match_mode": "any"
+    },
+    {
+      "id": "compare_lightweight_workstation_zh",
+      "category": "cross_product",
+      "question": "推薦最輕量的工作站等級筆電",
+      "expected_product": null,
+      "expected_facts": ["TitanBook", "1.95"],
+      "expected_language": "Chinese",
+      "match_mode": "any"
+    },
+    {
+      "id": "language_mixed_query",
+      "category": "language_test",
+      "question": "Tell me about 星鋒 X1",
+      "expected_product": "starforge_x1",
+      "expected_facts": ["StarForge", "X1"],
+      "expected_language": "Chinese",
+      "match_mode": "any"
+    },
+    {
+      "id": "kb_miss_price_en",
+      "category": "refusal_test",
+      "question": "What's the price of the StarForge X1?",
+      "expected_product": "starforge_x1",
+      "expected_facts": ["price", "don't", "not"],
+      "expected_language": "English",
+      "match_mode": "any"
+    },
+    {
+      "id": "unknown_product_zh",
+      "category": "refusal_test",
+      "question": "你們有 GalaxyBook 嗎？",
+      "expected_product": null,
+      "expected_facts": ["沒", "不"],
+      "expected_language": "Chinese",
+      "match_mode": "any"
+    },
+    {
+      "id": "competitor_block_en",
+      "category": "guardrail",
+      "question": "How does StarForge X1 compare to Asus ROG?",
+      "expected_product": null,
+      "expected_facts": [],
+      "expected_language": "English",
+      "match_mode": "any",
+      "expected_blocked": true
+    }
+  ]
+}

@@ -26,5 +26,8 @@ CLAUDE_CODE_INSTRUCTION.md
 # Personal / local-only
 Res/
 
+# Eval results (regenerated each run)
+eval_results/
+
 # Goole
 GEMINI.md
