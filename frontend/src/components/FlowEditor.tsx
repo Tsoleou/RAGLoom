@@ -6,6 +6,7 @@ import {
   Background,
   BackgroundVariant,
   addEdge,
+  reconnectEdge,
   useNodesState,
   useEdgesState,
   type Connection,
@@ -248,6 +249,36 @@ export function FlowEditor() {
     [nodes, setEdges]
   );
 
+  // Reconnect: drag an edge endpoint to reroute, or to empty space to delete.
+  // The ref tracks whether the drag landed on a valid handle — if not,
+  // onReconnectEnd removes the edge.
+  const edgeReconnectSuccessful = useRef(true);
+
+  const onReconnectStart = useCallback(() => {
+    edgeReconnectSuccessful.current = false;
+  }, []);
+
+  const onReconnect = useCallback(
+    (oldEdge: FlowEdge, newConnection: Connection) => {
+      if (!isConnectionValid(newConnection, nodes)) {
+        console.warn("[FlowEditor] Invalid reconnect: port types don't match");
+        return;
+      }
+      edgeReconnectSuccessful.current = true;
+      setEdges((els) => reconnectEdge(oldEdge, newConnection, els));
+    },
+    [nodes, setEdges]
+  );
+
+  const onReconnectEnd = useCallback(
+    (_: unknown, edge: FlowEdge) => {
+      if (!edgeReconnectSuccessful.current) {
+        setEdges((eds) => eds.filter((e) => e.id !== edge.id));
+      }
+    },
+    [setEdges]
+  );
+
   // ── Node Selection ──────────────────────────────────────────
 
   const onNodeClick = useCallback(
@@ -431,6 +462,9 @@ export function FlowEditor() {
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}
             onConnect={onConnect}
+            onReconnect={onReconnect}
+            onReconnectStart={onReconnectStart}
+            onReconnectEnd={onReconnectEnd}
             onInit={setRfInstance}
             onNodeClick={onNodeClick}
             onPaneClick={onPaneClick}
@@ -441,7 +475,7 @@ export function FlowEditor() {
             nodesDraggable
             nodesConnectable
             elementsSelectable
-            deleteKeyCode="Backspace"
+            deleteKeyCode={["Backspace", "Delete"]}
             minZoom={0.2}
             maxZoom={3}
           >
