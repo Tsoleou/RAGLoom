@@ -17,13 +17,35 @@ Behavior:
 
 import re
 from functools import lru_cache
-from typing import Iterable, Optional
+from typing import Iterable, Mapping, Optional
 
 
 _COMPARISON_RE = re.compile(
     r"比較|差別|差在哪|哪個好|哪一台|哪一個|\bvs\b|\bversus\b|\bcompare\b",
     flags=re.IGNORECASE,
 )
+
+
+# Maps a canonical English brand stem (must match the leading token of a
+# product_id) to Chinese aliases users may type. The canonical key is what
+# replaces the alias in the query string before pattern matching, so
+# 'starforge' must be the prefix of product_ids like 'starforge_x1'.
+DEFAULT_BRAND_ALIASES: dict[str, list[str]] = {
+    "starforge":  ["星鋒", "星峰"],
+    "visionbook": ["維森書", "視覺書"],
+    "novapad":    ["諾瓦", "諾瓦帕"],
+    "titanbook":  ["泰坦書", "鈦書"],
+    "luminos":    ["璐米諾", "流明"],
+}
+
+
+def _normalize_aliases(query: str, aliases: Mapping[str, list[str]]) -> str:
+    """Replace each alias in the query with its canonical English stem."""
+    for canonical, alts in aliases.items():
+        for alt in alts:
+            if alt and alt in query:
+                query = query.replace(alt, canonical)
+    return query
 
 
 @lru_cache(maxsize=None)
@@ -59,6 +81,7 @@ def _drop_prefix_redundant(matches: list[str]) -> list[str]:
 def detect_product_filter(
     query: str,
     product_ids: Iterable[str],
+    aliases: Optional[Mapping[str, list[str]]] = None,
 ) -> Optional[str]:
     """Return a single product_id if the query unambiguously names one product.
 
@@ -68,8 +91,11 @@ def detect_product_filter(
         return None
 
     # Cheap check first: comparison queries skip the pattern loop entirely.
+    # Run before alias normalization so Chinese comparison keywords still match.
     if _COMPARISON_RE.search(query):
         return None
+
+    query = _normalize_aliases(query, aliases if aliases is not None else DEFAULT_BRAND_ALIASES)
 
     matches = [pid for pid in product_ids if _build_pattern(pid).search(query)]
     if not matches:

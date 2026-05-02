@@ -122,6 +122,22 @@ export const NODE_DEFINITIONS: NodeTypeDef[] = [
     params: [
       { name: "mode", label: "Mode", type: "select", default: "rule", options: ["rule", "llm"] },
       { name: "model", label: "Model (LLM mode)", type: "string", default: "gemma3:4b" },
+      {
+        name: "aliases",
+        label: "Brand Aliases (JSON, rule mode)",
+        type: "textarea",
+        default: JSON.stringify(
+          {
+            starforge: ["星鋒", "星峰"],
+            visionbook: ["維森書", "視覺書"],
+            novapad: ["諾瓦", "諾瓦帕"],
+            titanbook: ["泰坦書", "鈦書"],
+            luminos: ["璐米諾", "流明"],
+          },
+          null,
+          2,
+        ),
+      },
     ],
   },
   {

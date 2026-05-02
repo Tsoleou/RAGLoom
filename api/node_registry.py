@@ -5,7 +5,10 @@
 前端的 nodeDefinitions.ts 需與此檔同步。
 """
 
+import json
 from dataclasses import dataclass, field
+
+from core.product_matcher import DEFAULT_BRAND_ALIASES
 
 
 @dataclass
@@ -185,6 +188,12 @@ _register(NodeType(
     params=[
         ParamDef("mode", "Mode", "select", "rule", options=["rule", "llm"]),
         ParamDef("model", "Model (LLM mode)", "string", "gemma3:4b"),
+        ParamDef(
+            "aliases",
+            "Brand Aliases (JSON, rule mode)",
+            "textarea",
+            json.dumps(DEFAULT_BRAND_ALIASES, ensure_ascii=False, indent=2),
+        ),
     ],
 ))
 

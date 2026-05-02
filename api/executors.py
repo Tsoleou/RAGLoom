@@ -25,7 +25,7 @@ from core.critic import critique_answer, revise_answer
 from core.generator import GenerationResult
 from core.personas import get_preset
 from core.product_selector import select_product
-from core.product_matcher import detect_product_filter
+from core.product_matcher import detect_product_filter, DEFAULT_BRAND_ALIASES
 import json
 
 
@@ -191,7 +191,16 @@ def execute_product_selector(inputs: dict, params: dict) -> dict:
             for m in meta["metadatas"]
             if m and m.get("product_id")
         }
-        product_id = detect_product_filter(query, product_ids) or ""
+        aliases_raw = (params.get("aliases") or "").strip()
+        if aliases_raw:
+            try:
+                aliases = json.loads(aliases_raw)
+            except json.JSONDecodeError as e:
+                print(f"[Executor:ProductSelector] Invalid aliases JSON, using defaults: {e}")
+                aliases = DEFAULT_BRAND_ALIASES
+        else:
+            aliases = DEFAULT_BRAND_ALIASES
+        product_id = detect_product_filter(query, product_ids, aliases=aliases) or ""
     else:
         reference_data = inputs.get("reference_data", "") or ""
         settings = Settings()
