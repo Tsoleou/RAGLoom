@@ -21,6 +21,12 @@ from core.guardrail import (
     check_query as guardrail_check,
     parse_keywords as guardrail_parse_keywords,
 )
+from core.scope_gate import (
+    ScopeBlocked,
+    check_scope,
+    check_scope_semantic,
+    refusal_message as scope_refusal_message,
+)
 from core.critic import critique_answer, revise_answer
 from core.generator import GenerationResult
 from core.personas import get_preset
@@ -165,6 +171,76 @@ def execute_guardrail(inputs: dict, params: dict) -> dict:
     }
 
 
+def execute_scope_gate(inputs: dict, params: dict) -> dict:
+    """Block off-topic queries; pass on-topic results through unchanged.
+
+    Two modes — 'semantic' (default) uses anchor-phrase embeddings; 'retrieval'
+    thresholds the top retrieval score. Greetings and very short queries bypass
+    either mode. Off-topic queries raise ScopeBlocked which the engine handles
+    like GuardrailBlocked.
+    """
+    results = inputs["results_in"]
+    query = inputs.get("query", "") or ""
+    mode = params.get("mode", "semantic")
+
+    if mode == "semantic":
+        on_anchors = [a for a in (params.get("on_topic_anchors", "") or "").splitlines() if a.strip()]
+        off_anchors = [a for a in (params.get("off_topic_anchors", "") or "").splitlines() if a.strip()]
+        try:
+            margin_threshold = float(params.get("margin_threshold", 0.0))
+        except (TypeError, ValueError):
+            margin_threshold = 0.0
+        embedding_model = params.get("embedding_model", "nomic-embed-text")
+        settings = Settings()
+
+        allowed, margin = check_scope_semantic(
+            query,
+            on_topic_anchors=on_anchors or None,
+            off_topic_anchors=off_anchors or None,
+            margin_threshold=margin_threshold,
+            embedding_model=embedding_model,
+            base_url=settings.ollama_base_url,
+        )
+
+        if not allowed:
+            message = scope_refusal_message(query, format_hint=None)
+            print(f"[Executor:ScopeGate] BLOCKED semantic (margin={margin:+.3f}): {query[:60]}")
+            raise ScopeBlocked(
+                reason=f"Semantic margin {margin:+.3f} below threshold {margin_threshold}",
+                refusal_message=message,
+                max_score=margin,
+            )
+
+        print(f"[Executor:ScopeGate] PASS semantic (margin={margin:+.3f}): {query[:60]}")
+        return {
+            "results_out": results,
+            "_preview": f"✓ Passed (semantic margin={margin:+.3f})",
+        }
+
+    # mode == "retrieval"
+    try:
+        min_score = float(params.get("min_score", 0.7))
+    except (TypeError, ValueError):
+        min_score = 0.7
+
+    allowed, max_score = check_scope(query, results, min_score=min_score)
+
+    if not allowed:
+        message = scope_refusal_message(query, format_hint=None)
+        print(f"[Executor:ScopeGate] BLOCKED retrieval (max_score={max_score:.2f} < {min_score}): {query[:60]}")
+        raise ScopeBlocked(
+            reason=f"Top retrieval score {max_score:.2f} below threshold {min_score}",
+            refusal_message=message,
+            max_score=max_score,
+        )
+
+    print(f"[Executor:ScopeGate] PASS retrieval (max_score={max_score:.2f}): {query[:60]}")
+    return {
+        "results_out": results,
+        "_preview": f"✓ Passed (max_score={max_score:.2f})",
+    }
+
+
 def execute_product_selector(inputs: dict, params: dict) -> dict:
     """Classify a query to a single product_id.
 
@@ -296,11 +372,15 @@ def execute_system_prompt(inputs: dict, params: dict) -> dict:
         text = persona.text
         format_hint = persona.format_hint
 
-    print(f"[Executor:SystemPrompt] preset={preset_name} ({len(text)} chars, format_hint={format_hint or 'text'})")
+    if isinstance(format_hint, dict):
+        format_label = "schema"
+    else:
+        format_label = format_hint or "text"
+    print(f"[Executor:SystemPrompt] preset={preset_name} ({len(text)} chars, format_hint={format_label})")
     return {
         "system_prompt": text,
         "format_hint": format_hint,
-        "_preview": f"preset={preset_name} | format_hint={format_hint or 'text'}\n{text[:80]}...",
+        "_preview": f"preset={preset_name} | format_hint={format_label}\n{text[:80]}...",
     }
 
 
@@ -339,7 +419,11 @@ def execute_generator(inputs: dict, params: dict) -> dict:
         base_url=settings.ollama_base_url,
     )
 
-    print(f"[Executor:Generator] Generated (model={model}, format={format_type or 'text'}, persona={'yes' if persona_text else 'no'})")
+    if isinstance(format_type, dict):
+        format_label = "schema"
+    else:
+        format_label = format_type or "text"
+    print(f"[Executor:Generator] Generated (model={model}, format={format_label}, persona={'yes' if persona_text else 'no'})")
     return {
         "answer": result,
         "_preview": result.text[:200] if result.text else "(empty)",
@@ -431,6 +515,7 @@ EXECUTORS: dict[str, callable] = {
     "reference_loader": execute_reference_loader,
     "query_input": execute_query_input,
     "guardrail": execute_guardrail,
+    "scope_gate": execute_scope_gate,
     "product_selector": execute_product_selector,
     "retriever": execute_retriever,
     "prompt_builder": execute_prompt_builder,

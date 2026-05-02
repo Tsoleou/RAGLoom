@@ -9,6 +9,10 @@ import json
 from dataclasses import dataclass, field
 
 from core.product_matcher import DEFAULT_BRAND_ALIASES
+from core.scope_gate import (
+    DEFAULT_ON_TOPIC_ANCHORS,
+    DEFAULT_OFF_TOPIC_ANCHORS,
+)
 
 
 @dataclass
@@ -164,6 +168,45 @@ _register(NodeType(
                 "For information about other brands, please visit their official channels."
             ),
         ),
+    ],
+))
+
+# --- Scope Gate ---
+_register(NodeType(
+    type_id="scope_gate",
+    label="Scope Gate",
+    label_en="ScopeGate",
+    description=(
+        "Block off-topic queries with a semantic-relevance check. Two modes: "
+        "'semantic' (default) compares the query embedding against on/off-topic "
+        "anchor phrases that live outside the KB — robust to bridge attacks. "
+        "'retrieval' thresholds the top retrieval score (cheaper, but vulnerable "
+        "when KB tokens are background noise). Greetings and very short queries "
+        "bypass either mode. Short-circuits the pipeline with a language-aware refusal."
+    ),
+    category="query",
+    inputs=[
+        Port("results_in", "results", "RetrievalResults"),
+        Port("query", "query", "Query Text"),
+    ],
+    outputs=[Port("results_out", "results", "RetrievalResults")],
+    params=[
+        ParamDef("mode", "Mode", "select", "semantic", options=["semantic", "retrieval"]),
+        ParamDef(
+            "on_topic_anchors",
+            "On-Topic Anchors (semantic mode, one per line)",
+            "textarea",
+            "\n".join(DEFAULT_ON_TOPIC_ANCHORS),
+        ),
+        ParamDef(
+            "off_topic_anchors",
+            "Off-Topic Anchors (semantic mode, one per line)",
+            "textarea",
+            "\n".join(DEFAULT_OFF_TOPIC_ANCHORS),
+        ),
+        ParamDef("margin_threshold", "Margin Threshold (semantic mode)", "number", 0.0),
+        ParamDef("min_score", "Min Retrieval Score (retrieval mode)", "number", 0.7),
+        ParamDef("embedding_model", "Embedding Model (semantic mode)", "string", "nomic-embed-text"),
     ],
 ))
 

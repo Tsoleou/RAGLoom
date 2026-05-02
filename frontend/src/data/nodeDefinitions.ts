@@ -104,6 +104,58 @@ export const NODE_DEFINITIONS: NodeTypeDef[] = [
     ],
   },
   {
+    typeId: "scope_gate",
+    label: "Scope Gate",
+    labelEn: "ScopeGate",
+    description:
+      "Block off-topic queries with a semantic-relevance check. Two modes: " +
+      "'semantic' (default) compares the query embedding against on/off-topic " +
+      "anchor phrases that live outside the KB — robust to bridge attacks. " +
+      "'retrieval' thresholds the top retrieval score (cheaper, but vulnerable " +
+      "when KB tokens are background noise). Greetings and very short queries " +
+      "bypass either mode. Short-circuits the pipeline with a language-aware refusal.",
+    category: "query",
+    inputs: [
+      { name: "results_in", dataType: "results", label: "RetrievalResults" },
+      { name: "query", dataType: "query", label: "Query Text" },
+    ],
+    outputs: [{ name: "results_out", dataType: "results", label: "RetrievalResults" }],
+    params: [
+      { name: "mode", label: "Mode", type: "select", default: "semantic", options: ["semantic", "retrieval"] },
+      {
+        name: "on_topic_anchors",
+        label: "On-Topic Anchors (semantic mode, one per line)",
+        type: "textarea",
+        default: [
+          "Questions about laptop computers, their specs, prices, or features",
+          "Asking which laptop is best for gaming, work, school, or creative use",
+          "Comparing laptop products across brands or models",
+          "Questions about laptop hardware: CPU, GPU, RAM, screen, battery, or weight",
+          "Questions about specific laptop models, brands, or product lines",
+          "筆記型電腦的規格、價格、功能或推薦",
+          "詢問筆電的處理器、顯示卡、記憶體、螢幕等硬體",
+          "詢問哪一款筆電適合特定用途",
+        ].join("\n"),
+      },
+      {
+        name: "off_topic_anchors",
+        label: "Off-Topic Anchors (semantic mode, one per line)",
+        type: "textarea",
+        default: [
+          "Questions about pets, animals, or breeds",
+          "Questions about food, cooking, or restaurants",
+          "Questions about movies, music, sports, or entertainment",
+          "Questions about weather, news, or current events",
+          "關於寵物、動物、食物、天氣的問題",
+          "與電腦科技無關的個人生活建議",
+        ].join("\n"),
+      },
+      { name: "margin_threshold", label: "Margin Threshold (semantic mode)", type: "number", default: 0.0 },
+      { name: "min_score", label: "Min Retrieval Score (retrieval mode)", type: "number", default: 0.7 },
+      { name: "embedding_model", label: "Embedding Model (semantic mode)", type: "string", default: "nomic-embed-text" },
+    ],
+  },
+  {
     typeId: "product_selector",
     label: "Product Selector",
     labelEn: "ProductSelector",

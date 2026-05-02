@@ -86,23 +86,24 @@ function buildDefaultPipeline(): { nodes: FlowNode[]; edges: FlowEdge[] } {
   const qinput    = createNodeFromDef(defs["query_input"],    { x: 0,                       y: ROW_Y_QUERY });
   const guardrail = createNodeFromDef(defs["guardrail"],      { x: QUERY_OFFSET,            y: ROW_Y_QUERY });
   const retriever = createNodeFromDef(defs["retriever"],      { x: QUERY_OFFSET + GAP_X,    y: ROW_Y_QUERY });
-  const pbuilder  = createNodeFromDef(defs["prompt_builder"], { x: QUERY_OFFSET + GAP_X * 2, y: ROW_Y_QUERY });
-  const generator = createNodeFromDef(defs["generator"],      { x: QUERY_OFFSET + GAP_X * 3, y: ROW_Y_QUERY });
-  const critic    = createNodeFromDef(defs["output_critic"],  { x: QUERY_OFFSET + GAP_X * 4, y: ROW_Y_QUERY });
-  const display   = createNodeFromDef(defs["result_display"], { x: QUERY_OFFSET + GAP_X * 5, y: ROW_Y_QUERY });
+  const scopegate = createNodeFromDef(defs["scope_gate"],     { x: QUERY_OFFSET + GAP_X * 2, y: ROW_Y_QUERY });
+  const pbuilder  = createNodeFromDef(defs["prompt_builder"], { x: QUERY_OFFSET + GAP_X * 3, y: ROW_Y_QUERY });
+  const generator = createNodeFromDef(defs["generator"],      { x: QUERY_OFFSET + GAP_X * 4, y: ROW_Y_QUERY });
+  const critic    = createNodeFromDef(defs["output_critic"],  { x: QUERY_OFFSET + GAP_X * 5, y: ROW_Y_QUERY });
+  const display   = createNodeFromDef(defs["result_display"], { x: QUERY_OFFSET + GAP_X * 6, y: ROW_Y_QUERY });
 
   // System Prompt — below Generator, connects directly to it
-  const sysprompt = createNodeFromDef(defs["system_prompt"],  { x: QUERY_OFFSET + GAP_X * 3, y: ROW_Y_QUERY + 200 });
+  const sysprompt = createNodeFromDef(defs["system_prompt"],  { x: QUERY_OFFSET + GAP_X * 4, y: ROW_Y_QUERY + 200 });
 
   // Reference Loader — below PromptBuilder, always-on product reference
-  const refloader = createNodeFromDef(defs["reference_loader"], { x: QUERY_OFFSET + GAP_X * 2, y: ROW_Y_QUERY + 200 });
+  const refloader = createNodeFromDef(defs["reference_loader"], { x: QUERY_OFFSET + GAP_X * 3, y: ROW_Y_QUERY + 200 });
 
   // Product Selector — below Retriever; default mode='rule' (string match against
   // collection metadata, zero LLM latency). Both collection and reference_data
   // are pre-wired so the user can flip mode to 'llm' with no re-wiring.
   const pselector = createNodeFromDef(defs["product_selector"], { x: QUERY_OFFSET + GAP_X, y: ROW_Y_QUERY + 200 });
 
-  const nodes = [loader, chunker, embedder, vstore, qinput, guardrail, retriever, pbuilder, generator, critic, display, sysprompt, refloader, pselector];
+  const nodes = [loader, chunker, embedder, vstore, qinput, guardrail, retriever, scopegate, pbuilder, generator, critic, display, sysprompt, refloader, pselector];
 
   const edgeStyle = { strokeWidth: 2, stroke: "#e07830" };
   const sysEdgeStyle = { strokeWidth: 2, stroke: "#70b0d0" };
@@ -110,18 +111,24 @@ function buildDefaultPipeline(): { nodes: FlowNode[]; edges: FlowEdge[] } {
   const criticEdgeStyle = { strokeWidth: 2, stroke: "#a070d0" };
   const refEdgeStyle = { strokeWidth: 2, stroke: "#60c080" };
   const selectorEdgeStyle = { strokeWidth: 2, stroke: "#d0a060" };
+  // Cyan = scope gate (semantic-relevance threshold). Distinct from amber
+  // brand-keyword guardrail so the two safety layers read at a glance.
+  const scopeEdgeStyle = { strokeWidth: 2, stroke: "#40b0c0" };
   const edges: FlowEdge[] = [
     // Ingest chain
     { id: `e-${loader.id}-${chunker.id}`,   source: loader.id,   target: chunker.id,   sourceHandle: "documents",  targetHandle: "documents",  animated: true, style: edgeStyle },
     { id: `e-${chunker.id}-${embedder.id}`, source: chunker.id,  target: embedder.id,  sourceHandle: "chunks",     targetHandle: "chunks",     animated: true, style: edgeStyle },
     { id: `e-${chunker.id}-${vstore.id}`,   source: chunker.id,  target: vstore.id,    sourceHandle: "chunks",     targetHandle: "chunks",     animated: true, style: edgeStyle },
     { id: `e-${embedder.id}-${vstore.id}`,  source: embedder.id, target: vstore.id,    sourceHandle: "embeddings", targetHandle: "embeddings", animated: true, style: edgeStyle },
-    // Query chain — query flows through guardrail first
+    // Query chain — query flows through guardrail first, retrieval through scope gate
     { id: `e-${qinput.id}-${guardrail.id}`,    source: qinput.id,    target: guardrail.id, sourceHandle: "query",      targetHandle: "query_in",   animated: true, style: guardEdgeStyle },
     { id: `e-${guardrail.id}-${retriever.id}`, source: guardrail.id, target: retriever.id, sourceHandle: "query_out",  targetHandle: "query",      animated: true, style: edgeStyle },
     { id: `e-${vstore.id}-${retriever.id}`,    source: vstore.id,    target: retriever.id, sourceHandle: "collection", targetHandle: "collection", animated: true, style: edgeStyle },
+    // Scope Gate (cyan): retriever results + query in, results pass-through (or block)
+    { id: `e-${retriever.id}-${scopegate.id}`, source: retriever.id, target: scopegate.id, sourceHandle: "results",    targetHandle: "results_in", animated: true, style: scopeEdgeStyle },
+    { id: `e-${guardrail.id}-${scopegate.id}`, source: guardrail.id, target: scopegate.id, sourceHandle: "query_out",  targetHandle: "query",      animated: true, style: scopeEdgeStyle },
     { id: `e-${guardrail.id}-${pbuilder.id}`,  source: guardrail.id, target: pbuilder.id,  sourceHandle: "query_out",  targetHandle: "query",      animated: true, style: edgeStyle },
-    { id: `e-${retriever.id}-${pbuilder.id}`,  source: retriever.id, target: pbuilder.id,  sourceHandle: "results",    targetHandle: "results",    animated: true, style: edgeStyle },
+    { id: `e-${scopegate.id}-${pbuilder.id}`,  source: scopegate.id, target: pbuilder.id,  sourceHandle: "results_out", targetHandle: "results",    animated: true, style: edgeStyle },
     { id: `e-${pbuilder.id}-${generator.id}`,  source: pbuilder.id,  target: generator.id, sourceHandle: "prompt",     targetHandle: "prompt",     animated: true, style: edgeStyle },
     // Generator → OutputCritic → ResultDisplay (purple edges = self-critique loop)
     { id: `e-${generator.id}-${critic.id}`,    source: generator.id, target: critic.id,    sourceHandle: "answer",     targetHandle: "answer_in",  animated: true, style: criticEdgeStyle },

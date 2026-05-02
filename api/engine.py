@@ -10,6 +10,7 @@ from typing import Any, Callable
 
 from api.executors import EXECUTORS
 from core.guardrail import GuardrailBlocked
+from core.scope_gate import ScopeBlocked
 
 
 # Status constants
@@ -143,9 +144,10 @@ def execute_graph(
             outputs[nid] = output
             results[nid] = {"status": STATUS_DONE, "preview": preview}
             notify(nid, STATUS_DONE, preview)
-        except GuardrailBlocked as blocked:
-            # Short-circuit: mark the guardrail node itself as "blocked",
-            # mirror the refusal onto any result_display nodes, stop execution.
+        except (GuardrailBlocked, ScopeBlocked) as blocked:
+            # Short-circuit: mark the gate node itself as "blocked", mirror
+            # the refusal onto any result_display nodes, stop execution.
+            # Same handling for both gates (brand keyword + scope threshold).
             blocked_preview = f"⊘ BLOCKED\nMatched: {blocked.matched_keyword}\n\n{blocked.refusal_message}"
             results[nid] = {"status": STATUS_BLOCKED, "preview": blocked_preview}
             notify(nid, STATUS_BLOCKED, blocked_preview)
@@ -160,7 +162,8 @@ def execute_graph(
                     }
                     notify(other_nid, STATUS_BLOCKED, blocked.refusal_message)
 
-            print(f"[Engine] Pipeline short-circuited by guardrail at '{nid}' (matched: {blocked.matched_keyword})")
+            gate_kind = "guardrail" if isinstance(blocked, GuardrailBlocked) else "scope_gate"
+            print(f"[Engine] Pipeline short-circuited by {gate_kind} at '{nid}' (matched: {blocked.matched_keyword})")
             break
         except Exception as e:
             error_msg = str(e)

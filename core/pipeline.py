@@ -22,6 +22,7 @@ from core.prompt_builder import build_prompt
 from core.generator import generate, GenerationResult
 from core.personas import get_preset, PROFESSIONAL
 from core.product_matcher import detect_product_filter
+from core.scope_gate import check_scope_semantic, refusal_message as scope_refusal_message
 
 
 class RAGPipeline:
@@ -146,16 +147,9 @@ class RAGPipeline:
 
         self._last_retrieval = results
 
-        # 2. Build context-only prompt
-        prompt = build_prompt(
-            query=question,
-            contexts=results,
-            glossary=glossary,
-            reference_data=self._reference_data,
-            vision_context=vision_context,
-        )
-
-        # 3. Resolve persona — graph_preset (from saved profile) takes priority
+        # Resolve persona early — needed for scope-gate refusal formatting
+        # (chatbot mode wraps refusal in JSON) before we decide whether to
+        # call the LLM at all.
         if graph_preset == "custom" and graph_custom_text:
             from core.personas import Persona
             persona = Persona(text=graph_custom_text, format_hint="")
@@ -163,6 +157,43 @@ class RAGPipeline:
             persona = get_preset(graph_preset) or PROFESSIONAL
         else:
             persona = get_preset(mode or self.config.output_mode) or PROFESSIONAL
+
+        # 2. Scope gate — semantic-relevance threshold. Off-topic queries
+        # consistently retrieve at much lower scores than on-topic ones; we
+        # short-circuit those with a canned refusal (no LLM call) which is
+        # both faster and immune to the small-model failure modes we saw
+        # with prompt-only refusal (token loops, hallucinated catalogs).
+        # Skipped when hard-filter routed: naming a product explicitly is
+        # itself an on-topic signal, even if embedding scores stay modest
+        # (e.g., "Tell me about 星鋒 X1" routes correctly but scores ~0.55).
+        if not product_id:
+            # Semantic anchor check: compare query embedding to on/off-topic
+            # anchor phrases living OUTSIDE the KB. Beats retrieval-score
+            # mode on bridge attacks ("is the dog like a laptop?") because
+            # off-topic tokens carry more weight than the generic "laptop"
+            # background term in product chunks.
+            scope_allowed, margin = check_scope_semantic(
+                question,
+                embedding_model=self.config.embedding_model,
+                base_url=self.config.ollama_base_url,
+            )
+            if not scope_allowed:
+                print(f"[Pipeline] Scope gate BLOCKED (margin={margin:+.3f}): {question[:60]}")
+                refusal = scope_refusal_message(question, format_hint=persona.format_hint)
+                return GenerationResult(
+                    text=refusal,
+                    messages=self._messages,  # don't pollute history with refusal
+                    model=self.config.llm_model,
+                )
+
+        # 3. Build context-only prompt
+        prompt = build_prompt(
+            query=question,
+            contexts=results,
+            glossary=glossary,
+            reference_data=self._reference_data,
+            vision_context=vision_context,
+        )
 
         # Triple-anchor language: persona LANGUAGE rule (front), KB context (middle),
         # explicit reminder (back) — small models like gemma3:4b lose the front rule
