@@ -1,19 +1,25 @@
 """
 Eval scorer — turns a (case, answer, retrieval) tuple into per-dimension scores.
 
-Four rule-based dimensions (no LLM-as-judge in v1):
+Four rule-based dimensions:
   - language      : detected answer language matches expected
   - retrieval     : retrieved chunks contain expected product_id (skipped if expected_product is null)
   - faithfulness  : keyword recall over expected_facts (mode="all" or "any")
   - relevance     : MVP — pass if faithfulness >= 0.5
 
 Guardrail cases short-circuit: if expected_blocked == actual_blocked, all dimensions = 1.0.
+
+Optional LLM-as-judge layer (Phase 2): the runner can attach a `llm_judge` dict
+to each CaseResult. aggregate() then surfaces `per_dimension_llm` and
+`judge_failures` blocks. The judge itself lives in eval/judge.py; the 1b'
+hallucination gate (passed=False when hallucinated_claims is non-empty) is
+applied in the runner, not here.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field, asdict
-from typing import Any
+from typing import Any, Optional
 
 from core.generator import _detect_language
 
@@ -38,6 +44,7 @@ class CaseResult:
     scores: dict[str, float | None]  # None = N/A (skipped)
     passed: bool
     notes: list[str] = field(default_factory=list)
+    llm_judge: Optional[dict] = None  # populated by runner when --llm-judge is set
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -201,10 +208,47 @@ def aggregate(results: list[CaseResult]) -> dict[str, Any]:
     }
 
     passed_count = sum(1 for r in results if r.passed)
-    return {
+    summary: dict[str, Any] = {
         "total": len(results),
         "passed": passed_count,
         "pass_rate": round(passed_count / len(results), 3),
         "per_dimension": per_dimension,
         "per_category": per_category,
     }
+
+    # LLM judge aggregates — only present if at least one case ran the judge
+    judged = [r for r in results if r.llm_judge is not None]
+    if judged:
+        faith_scores = [
+            r.llm_judge["faithfulness"].get("score")
+            for r in judged
+            if r.llm_judge.get("error") is None
+            and r.llm_judge.get("faithfulness", {}).get("score") is not None
+        ]
+        rel_scores = [
+            r.llm_judge["relevance"].get("score")
+            for r in judged
+            if r.llm_judge.get("error") is None
+            and r.llm_judge.get("relevance", {}).get("score") is not None
+        ]
+        judge_errors = sum(1 for r in judged if r.llm_judge.get("error") is not None)
+
+        judge_failures = [
+            {
+                "case_id": r.case_id,
+                "hallucinated_claims": r.llm_judge["faithfulness"]["hallucinated_claims"],
+            }
+            for r in judged
+            if r.llm_judge.get("error") is None
+            and r.llm_judge["faithfulness"]["hallucinated_claims"]
+        ]
+
+        summary["per_dimension_llm"] = {
+            "faithfulness": round(sum(faith_scores) / len(faith_scores), 3) if faith_scores else None,
+            "relevance": round(sum(rel_scores) / len(rel_scores), 3) if rel_scores else None,
+            "hallucination_rate": f"{len(judge_failures)}/{len(judged)}",
+            "judge_errors": judge_errors,
+        }
+        summary["judge_failures"] = judge_failures
+
+    return summary
