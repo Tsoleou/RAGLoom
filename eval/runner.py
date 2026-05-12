@@ -85,8 +85,11 @@ def run_case(pipeline: RAGPipeline, case: dict, args: argparse.Namespace) -> Cas
         blocked=False,
     )
 
-    # 4. Optional LLM-as-judge pass
-    if args.llm_judge:
+    # 4. Optional LLM-as-judge pass — skip when pipeline short-circuited
+    # (price guard / scope gate). Those return canned refusals before
+    # retrieval runs, so there is no context to verify the answer against
+    # and the judge would falsely flag the refusal text as unsupported.
+    if args.llm_judge and retrieved_chunks:
         case_result.llm_judge = run_judge(
             question=question,
             retrieved_chunks=retrieved_chunks[:3],
@@ -97,7 +100,11 @@ def run_case(pipeline: RAGPipeline, case: dict, args: argparse.Namespace) -> Cas
         # 1b' hallucination gate — only the binary list signal can veto,
         # never the noisy continuous scores. Fail-open when the judge itself
         # errored (error != None) so a flaky judge doesn't punish good answers.
-        if not args.no_hallucination_gate and case_result.llm_judge.get("error") is None:
+        if (
+            case_result.llm_judge
+            and not args.no_hallucination_gate
+            and case_result.llm_judge.get("error") is None
+        ):
             hallucinated = case_result.llm_judge["faithfulness"]["hallucinated_claims"]
             if hallucinated:
                 case_result.passed = False

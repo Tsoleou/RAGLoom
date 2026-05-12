@@ -87,8 +87,8 @@
       "id": "kb_miss_price_en",
       "category": "refusal_test",
       "question": "What's the price of the StarForge X1?",
-      "expected_product": "starforge_x1",
-      "expected_facts": ["price", "don't", "not"],
+      "expected_product": null,
+      "expected_facts": ["pricing", "don't", "retail"],
       "expected_language": "English",
       "match_mode": "any"
     },

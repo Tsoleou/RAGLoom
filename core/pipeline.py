@@ -21,6 +21,7 @@ from core.retriever import retrieve
 from core.prompt_builder import build_prompt
 from core.generator import generate, GenerationResult
 from core.personas import get_preset, PROFESSIONAL
+from core.price_guard import is_price_query, refusal_message as price_refusal_message
 from core.product_matcher import detect_product_filter
 from core.scope_gate import check_scope_semantic, refusal_message as scope_refusal_message
 
@@ -125,6 +126,25 @@ class RAGPipeline:
         """
         mode = mode or self.config.output_mode
 
+        # Resolve persona once up front so any short-circuit refusal
+        # (price guard / scope gate) can format itself in the right shape.
+        persona = self._resolve_persona(mode, graph_preset, graph_custom_text)
+
+        # 0. Price guard — gemma3:4b fabricates specific prices when asked
+        # ("$1,799"...) no matter how strongly the persona forbids it. The
+        # KB has zero pricing data, so detect the intent in code and answer
+        # with a canned refusal before any LLM call. Same enforcement family
+        # as brand Guardrail and ScopeGate.
+        if is_price_query(question):
+            print(f"[Pipeline] Price guard SHORT-CIRCUITED: {question[:60]}")
+            refusal = price_refusal_message(question, format_hint=persona.format_hint)
+            self._last_retrieval = []
+            return GenerationResult(
+                text=refusal,
+                messages=self._messages,
+                model=self.config.llm_model,
+            )
+
         # 1. Retrieve — try hard-filter routing first when the query unambiguously
         # names one product. nomic-embed-text alone can't separate products in a
         # homogeneous catalog (every chunk looks similar), so the right product
@@ -146,17 +166,6 @@ class RAGPipeline:
         )
 
         self._last_retrieval = results
-
-        # Resolve persona early — needed for scope-gate refusal formatting
-        # (chatbot mode wraps refusal in JSON) before we decide whether to
-        # call the LLM at all.
-        if graph_preset == "custom" and graph_custom_text:
-            from core.personas import Persona
-            persona = Persona(text=graph_custom_text, format_hint="")
-        elif graph_preset:
-            persona = get_preset(graph_preset) or PROFESSIONAL
-        else:
-            persona = get_preset(mode or self.config.output_mode) or PROFESSIONAL
 
         # 2. Scope gate — semantic-relevance threshold. Off-topic queries
         # consistently retrieve at much lower scores than on-topic ones; we
@@ -220,6 +229,20 @@ class RAGPipeline:
         self._messages = generation.messages
 
         return generation
+
+    def _resolve_persona(self, mode, graph_preset, graph_custom_text):
+        """Pick the persona used to format the current turn.
+
+        Resolution priority: explicit graph_custom_text > graph_preset name >
+        mode > settings default. Returns a Persona (text + format_hint) so
+        short-circuit refusals can match the format the LLM would have used.
+        """
+        if graph_preset == "custom" and graph_custom_text:
+            from core.personas import Persona
+            return Persona(text=graph_custom_text, format_hint="")
+        if graph_preset:
+            return get_preset(graph_preset) or PROFESSIONAL
+        return get_preset(mode or self.config.output_mode) or PROFESSIONAL
 
     def reset_collection(self) -> None:
         """清空並重建知識庫 collection。"""
