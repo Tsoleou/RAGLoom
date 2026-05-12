@@ -94,6 +94,7 @@ def run_case(pipeline: RAGPipeline, case: dict, args: argparse.Namespace) -> Cas
             question=question,
             retrieved_chunks=retrieved_chunks[:3],
             answer=answer,
+            reference_data=pipeline._reference_data,
             model=args.judge_model,
         )
 
