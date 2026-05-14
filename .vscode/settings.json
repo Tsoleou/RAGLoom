@@ -1,0 +1,13 @@
+{
+  "workbench.colorCustomizations": {
+    "terminal.tab.activeBorder": "#f97316",
+    "terminalCursor.foreground": "#f97316",
+    "terminal.ansiBrightYellow": "#f97316",
+    "statusBar.background": "#f97316",
+    "statusBar.foreground": "#1f2937",
+    "statusBarItem.hoverBackground": "#ea580c"
+  },
+  "terminal.integrated.tabs.title": "🧵 RAGLoom: ${process}",
+  "terminal.integrated.tabs.description": "${task}${separator}${local}${separator}${cwdFolder}",
+  "window.title": "🧵 RAGLoom — ${activeEditorShort}${separator}${rootName}"
+}

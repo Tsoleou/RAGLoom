@@ -8,13 +8,16 @@ Built with Python, FastAPI, React, ChromaDB, and Ollama. No LangChain.
 
 ## Features
 
-- **Visual node editor** — drag-and-drop pipeline building with real-time per-node execution status pushed over WebSocket. Fourteen node types covering the full ingest and query path.
+- **Visual node editor** — drag-and-drop pipeline building with real-time per-node execution status pushed over WebSocket. Fifteen node types covering the full ingest and query path.
 - **Safety Guardrail** — keyword-based pre-retrieval filter that blocks queries matching a configurable block list (e.g. competitor brand names) before they ever reach the LLM. In the node view, blocked queries short-circuit downstream nodes with an amber status ring.
+- **ScopeGate** — semantic-relevance check that compares the query embedding to on/off-topic anchor phrases living outside the knowledge base. Off-topic queries (pets, recipes, weather, etc.) short-circuit with a canned refusal — no LLM call, no fabricated catalog. Robust to bridge attacks like "is the dog like a laptop?" where retrieval scores alone can't distinguish on- vs off-topic.
+- **PriceGuard** — pre-retrieval pattern match for price-intent queries (`price`, `cost`, `MSRP`, `how much`, `售價`, `多少錢`, etc.) that short-circuits to a canned bilingual refusal. Mirrors `Guardrail` and `ScopeGate`: at small-model scale, "trust the model to follow instructions" is unreliable for high-stakes refusals — the policy is enforced in code instead.
 - **OutputCritic** — an optional second LLM pass that audits the generator's answer against a negative-rules list. `audit` mode labels violations; `revise` mode rewrites the offending answer.
-- **Persona presets** — the `SystemPrompt` node ships with `professional` and `chatbot` presets (plus free-form custom text), both tuned to a trade-show promoter register (2–4 sentences, lead with the hook). The `chatbot` preset emits structured JSON `{reply, emotion}`, which the UI smart-renders as an emotion badge plus a reply bubble with an animated avatar. Replies are always in the visitor's language.
+- **Persona presets** — the `SystemPrompt` node ships with `professional` and `chatbot` presets (plus free-form custom text), both tuned to a trade-show promoter register (2–4 sentences, lead with the hook). The `chatbot` preset emits structured JSON `{reply, emotion}` enforced by Ollama grammar-constrained decoding, which the UI smart-renders as an emotion badge plus a reply bubble with an animated avatar. Replies are always in the visitor's language.
 - **Always-on reference data** — the `ReferenceLoader` node loads a static reference file (e.g. a product comparison CSV) and injects it directly into every prompt, guaranteeing broad coverage for comparison queries independent of vector retrieval results.
 - **Metadata-filtered retrieval** — product documents are tagged with a `product_id` at ingest time (derived from filename). The `Retriever` node accepts a filter parameter to scope retrieval to a single product. The `ProductSelector` node, included in the default pipeline, classifies query intent in one of two modes — `rule` (fast string matching against the collection's `product_id`s, zero LLM latency) or `llm` (small LLM pass for ambiguous phrasing) — and feeds the filter automatically. Comparison or unrecognized queries fall through to broad search.
 - **Inline editing** — the `QueryInput` node lets you type the question directly on the node; no config panel round-trip.
+- **Golden-set eval with LLM-as-judge** — `python -m eval.runner --llm-judge` runs a curated regression set through the pipeline and audits each answer with a second LLM call that returns explicit `hallucinated_claims` lists. Gates on the binary signal (claim list empty / non-empty) rather than noisy float scores so same-commit reruns don't flip pass/fail. See [Eval Harness](#eval-harness) below.
 
 ![Guardrail node — keyword-based block with amber match indicator](doc/images/KeywordGuardrail.png)
 
@@ -23,11 +26,27 @@ Built with Python, FastAPI, React, ChromaDB, and Ollama. No LangChain.
 ```
 Ingest:  Document → Loader → Chunker → Embedder → VectorStore (ChromaDB)
 
-Query:   Question → Guardrail → ProductSelector ─product_id─► Retriever → PromptBuilder → Generator → OutputCritic → Answer
-                                  (rule | llm)                                  ↑                ↑
-                                                                       ReferenceLoader      SystemPrompt
-                                                                       (always-on ref)   (persona + format)
+Query:   Question
+            │
+   Guardrail (API layer, brand keywords) ─ hit ─► canned refusal
+            │
+            ▼
+   PriceGuard (pipeline step 0, price intent) ─ hit ─► canned refusal
+            │
+            ▼
+   ProductSelector ─ product_id ─► Retriever
+   (rule | llm)                       │
+                                      ▼
+                            ScopeGate (semantic off-topic) ─ hit ─► canned refusal
+                                      │
+                                      ▼
+                              PromptBuilder ──► Generator ──► OutputCritic ──► Answer
+                                   ▲                 ▲
+                            ReferenceLoader     SystemPrompt
+                            (always-on ref)   (persona + format)
 ```
+
+Three pre-LLM guards — `Guardrail`, `PriceGuard`, `ScopeGate` — short-circuit with canned refusals before reaching the generator. Each fires on a different signal (competitor keywords / price intent / semantic off-topic) and they compose without overlap.
 
 ### Core Modules
 
@@ -39,6 +58,8 @@ Query:   Question → Guardrail → ProductSelector ─product_id─► Retrieve
 | `core/vector_store.py` | ChromaDB persistent storage and retrieval |
 | `core/retriever.py` | Semantic search with keyword boosting |
 | `core/guardrail.py` | Keyword-based query filter with word-boundary matching |
+| `core/scope_gate.py` | Semantic on/off-topic check via anchor embeddings (default mode) or retrieval-score threshold |
+| `core/price_guard.py` | Regex-based price-intent detector + canned bilingual refusal; short-circuits at step 0 of `pipeline.query()` |
 | `core/prompt_builder.py` | Context assembly (RAG results + glossary + vision) |
 | `core/personas.py` | Persona presets (professional / chatbot / custom) |
 | `core/generator.py` | Calls Ollama LLM for answer generation |
@@ -54,7 +75,7 @@ Query:   Question → Guardrail → ProductSelector ─product_id─► Retrieve
 
 ![Chat UI](doc/images/Chatview.png)
 
-**Node Editor** — for builders and operators. Drag-and-drop pipeline editor with fourteen node types including `Guardrail`, `SystemPrompt`, `OutputCritic`, `ReferenceLoader`, and `ProductSelector`. Real-time per-node execution status over WebSocket. The `ResultDisplay` node smart-renders chatbot JSON into an emotion badge plus reply text. A **Load Default** button restores the default 14-node pipeline at any time.
+**Node Editor** — for builders and operators. Drag-and-drop pipeline editor with fifteen node types including `Guardrail`, `ScopeGate`, `SystemPrompt`, `OutputCritic`, `ReferenceLoader`, and `ProductSelector`. Real-time per-node execution status over WebSocket. The `ResultDisplay` node smart-renders chatbot JSON into an emotion badge plus reply text. A **Load Default** button restores the default pipeline at any time.
 
 ![Node Editor](doc/images/Editorview.png)
 
@@ -117,6 +138,35 @@ Place product documents in the `knowledge_base/` directory. Supported formats: `
 Files matching `product_*.{ext}` are automatically tagged with a `product_id` metadata field (derived from the filename) at ingest time, enabling metadata-filtered retrieval.
 
 Place always-on reference files (e.g. a product comparison CSV) in `knowledge_base/_reference/`. These are loaded at startup and injected directly into every prompt — they are not indexed in the vector store.
+
+## Eval Harness
+
+A small golden-set regression suite lives in `eval/`. Each case in `eval/golden_set.json` declares a question, expected language, optional expected `product_id`, expected facts (keyword recall), and optional `expected_blocked` for guardrail behaviour.
+
+### Rule-based scoring (default)
+
+```bash
+python -m eval.runner                              # full set, re-ingest KB
+python -m eval.runner --skip-ingest                # reuse existing chroma_db
+python -m eval.runner --category single_product_spec
+python -m eval.runner --case kb_miss_price_en      # single case (debug)
+```
+
+Four deterministic dimensions: `language` (CJK detection vs expected), `retrieval` (expected `product_id` present in retrieved chunks), `faithfulness` (substring recall over `expected_facts` with `match_mode: all | any`), and `relevance` (heuristic — passes if faithfulness ≥ 0.5). Guardrail-blocked cases short-circuit: pass if `expected_blocked == actual_blocked`. Each run writes a JSON report to `eval_results/`.
+
+### LLM-as-judge (optional second pass)
+
+```bash
+python -m eval.runner --llm-judge
+python -m eval.runner --llm-judge --judge-model qwen2.5:7b
+python -m eval.runner --llm-judge --no-hallucination-gate    # calibration mode
+```
+
+A second LLM call audits each answer against the retrieved chunks **and** the always-on reference data. The judge returns per-dimension scores plus explicit `supported_claims` / `hallucinated_claims` lists. Output is grammar-constrained via Ollama structured output, so the response is guaranteed to match the schema.
+
+The hallucination gate fires **only on the binary signal** — `passed = rule_pass AND hallucinated_claims == []`. Continuous scores (faithfulness 0.0–1.0, relevance 0.0–1.0) are reported in the JSON output but never veto pass/fail; same-commit reruns of a small model can drift float scores ±0.15 across runs, which would flicker a threshold gate. The `--no-hallucination-gate` flag preserves the judge output for calibration runs without flipping `passed`.
+
+Cases where the pipeline short-circuits (PriceGuard, ScopeGate, Guardrail) skip the judge — there is no retrieved context to audit a canned refusal against.
 
 ## Configuration
 
