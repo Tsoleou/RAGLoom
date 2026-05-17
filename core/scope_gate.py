@@ -48,12 +48,14 @@ DEFAULT_ON_TOPIC_ANCHORS: list[str] = [
 ]
 
 DEFAULT_OFF_TOPIC_ANCHORS: list[str] = [
-    "Questions about pets, animals, or breeds",
-    "Questions about food, cooking, or restaurants",
-    "Questions about movies, music, sports, or entertainment",
+    "Questions about finance, stock prices, investments, or markets",
+    "Questions about unrelated daily-life topics like pets, food, sports, or entertainment",
     "Questions about weather, news, or current events",
-    "關於寵物、動物、食物、天氣的問題",
-    "與電腦科技無關的個人生活建議",
+    "Personal advice or chit-chat unrelated to consumer electronics",
+    "關於金融、股市、投資、理財的問題",
+    "與筆電產品無關的日常生活話題（飲食、寵物、運動、娛樂等）",
+    "關於天氣、新聞、時事的問題",
+    "與消費電子無關的個人建議或閒聊",
 ]
 
 # A pure greeting / small-talk should NOT be blocked even when retrieval is
