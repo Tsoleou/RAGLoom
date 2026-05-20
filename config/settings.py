@@ -43,7 +43,7 @@ class Settings:
     # 檢索參數
     top_k: int = 5
     score_threshold: float = 0.3
-    keyword_boost: float = 0.5
+    keyword_boost: float = 0.3
 
     # 切割參數
     chunk_size: int = 500

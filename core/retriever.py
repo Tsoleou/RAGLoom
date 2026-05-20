@@ -18,7 +18,7 @@ def retrieve(
     collection: chromadb.Collection,
     top_k: int = 5,
     score_threshold: float = 0.3,
-    keyword_boost: float = 0.5,
+    keyword_boost: float = 0.3,
     embedding_model: str = "nomic-embed-text",
     base_url: str = "http://localhost:11434",
     filters: Optional[dict] = None,

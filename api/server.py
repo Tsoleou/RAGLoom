@@ -63,7 +63,7 @@ def _default_chat_graph() -> dict:
         {"id": "priceguard", "type": "price_guard",      "position": {"x": QO + GAP_X,     "y": Y_QUERY},
          "params": {}},
         {"id": "retriever",  "type": "retriever",        "position": {"x": QO + GAP_X * 2, "y": Y_QUERY},
-         "params": {"top_k": 5, "score_threshold": 0.0, "keyword_boost": 0.5,
+         "params": {"top_k": 5, "score_threshold": 0.0, "keyword_boost": 0.3,
                     "embedding_model": "nomic-embed-text", "product_filter": ""}},
         {"id": "rerank",     "type": "retrieval_judge",  "position": {"x": QO + GAP_X * 3, "y": Y_QUERY},
          "params": {"model": "gemma3:4b"}},
