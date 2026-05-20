@@ -19,6 +19,7 @@ from core.generator import generate
 from core.guardrail import (
     GuardrailBlocked,
     check_query as guardrail_check,
+    format_refusal as guardrail_format_refusal,
     parse_keywords as guardrail_parse_keywords,
 )
 from core.scope_gate import (
@@ -27,6 +28,12 @@ from core.scope_gate import (
     check_scope_semantic,
     refusal_message as scope_refusal_message,
 )
+from core.price_guard import (
+    PriceGuardBlocked,
+    is_price_query,
+    refusal_message as price_refusal_message,
+)
+from core.retrieval_judge import judge_retrieval
 from core.critic import critique_answer, revise_answer
 from core.generator import GenerationResult
 from core.personas import get_preset
@@ -99,26 +106,37 @@ def execute_embedder(inputs: dict, params: dict) -> dict:
 
 
 def execute_vectorstore(inputs: dict, params: dict) -> dict:
-    """寫入向量資料庫。"""
+    """寫入向量資料庫。
+
+    `wipe_collection` 預設為 False — 重跑 Editor pipeline 時，**不會**砍掉
+    現有 collection。重複 ID 走 upsert 直接覆寫，新 ID 插入，舊資料保留。
+    這避免了在 Editor 試跑就把 ChatView 已經 ingest 的庫炸掉的雷。
+    需要徹底重建（例如改 chunker 策略、刪檔案）時把這個 param 打開。
+    """
     chunks = inputs["chunks"]
     embeddings = inputs["embeddings"]
     persist_path = params.get("persist_path", "./chroma_db")
     collection_name = params.get("collection_name", "rag_collection")
+    wipe_collection = bool(params.get("wipe_collection", False))
 
     client = get_client(persist_path)
-    # Drop existing collection so renamed/removed source files don't leave
-    # orphan chunks behind on repeated runs.
-    try:
-        delete_collection(client, name=collection_name)
-    except Exception:
-        pass  # collection doesn't exist yet
-    collection = create_collection(client, name=collection_name)
-    add_chunks(collection, chunks, embeddings)
+    if wipe_collection:
+        try:
+            delete_collection(client, name=collection_name)
+        except Exception:
+            pass  # collection doesn't exist yet
+        collection = create_collection(client, name=collection_name)
+        add_chunks(collection, chunks, embeddings, upsert=False)
+        action = "rebuilt (wiped + reloaded)"
+    else:
+        collection = create_collection(client, name=collection_name)
+        add_chunks(collection, chunks, embeddings, upsert=True)
+        action = "upserted (preserved existing)"
 
-    print(f"[Executor:VectorStore] Stored {len(chunks)} chunks in '{collection_name}'")
+    print(f"[Executor:VectorStore] {action}: {len(chunks)} chunks in '{collection_name}'")
     return {
         "collection": {"client_path": persist_path, "name": collection_name},
-        "_preview": f"Collection '{collection_name}' ({len(chunks)} chunks)",
+        "_preview": f"Collection '{collection_name}' — {action}\n{len(chunks)} chunks (total: {collection.count()})",
     }
 
 
@@ -147,6 +165,7 @@ def execute_query_input(inputs: dict, params: dict) -> dict:
 def execute_guardrail(inputs: dict, params: dict) -> dict:
     """Check query against blocked keywords. Raises GuardrailBlocked if blocked."""
     query = inputs["query_in"]
+    format_hint = inputs.get("format_hint")
     keywords = guardrail_parse_keywords(params.get("blocked_keywords", ""))
     refusal = params.get("refusal_message", "") or None
 
@@ -160,11 +179,38 @@ def execute_guardrail(inputs: dict, params: dict) -> dict:
         print(f"[Executor:Guardrail] BLOCKED (matched '{matched}'): {query[:60]}")
         raise GuardrailBlocked(
             reason=f"Query matched blocked keyword: {matched}",
-            refusal_message=message,
+            refusal_message=guardrail_format_refusal(message, format_hint=format_hint),
             matched_keyword=matched,
         )
 
     print(f"[Executor:Guardrail] PASS: {query[:60]}")
+    return {
+        "query_out": query,
+        "_preview": f"✓ Passed\n{query[:60]}",
+    }
+
+
+def execute_price_guard(inputs: dict, params: dict) -> dict:
+    """Block queries asking about price / cost / discount.
+
+    gemma3:4b fabricates dollar amounts under direct pricing pressure even
+    when the persona forbids it (verified 2026-05-12). The KB has zero price
+    data, so detecting the intent in code and refusing here is more reliable
+    than trusting prompt rules. Mirrors Guardrail's shape: passes query
+    through on success, raises PriceGuardBlocked on hit.
+    """
+    query = inputs["query_in"]
+    format_hint = inputs.get("format_hint")
+
+    if is_price_query(query):
+        message = price_refusal_message(query, format_hint=format_hint)
+        print(f"[Executor:PriceGuard] BLOCKED price intent: {query[:60]}")
+        raise PriceGuardBlocked(
+            reason="Query contains pricing intent",
+            refusal_message=message,
+        )
+
+    print(f"[Executor:PriceGuard] PASS: {query[:60]}")
     return {
         "query_out": query,
         "_preview": f"✓ Passed\n{query[:60]}",
@@ -181,6 +227,7 @@ def execute_scope_gate(inputs: dict, params: dict) -> dict:
     """
     results = inputs["results_in"]
     query = inputs.get("query", "") or ""
+    format_hint = inputs.get("format_hint")
     mode = params.get("mode", "semantic")
 
     if mode == "semantic":
@@ -203,7 +250,7 @@ def execute_scope_gate(inputs: dict, params: dict) -> dict:
         )
 
         if not allowed:
-            message = scope_refusal_message(query, format_hint=None)
+            message = scope_refusal_message(query, format_hint=format_hint)
             print(f"[Executor:ScopeGate] BLOCKED semantic (margin={margin:+.3f}): {query[:60]}")
             raise ScopeBlocked(
                 reason=f"Semantic margin {margin:+.3f} below threshold {margin_threshold}",
@@ -226,7 +273,7 @@ def execute_scope_gate(inputs: dict, params: dict) -> dict:
     allowed, max_score = check_scope(query, results, min_score=min_score)
 
     if not allowed:
-        message = scope_refusal_message(query, format_hint=None)
+        message = scope_refusal_message(query, format_hint=format_hint)
         print(f"[Executor:ScopeGate] BLOCKED retrieval (max_score={max_score:.2f} < {min_score}): {query[:60]}")
         raise ScopeBlocked(
             reason=f"Top retrieval score {max_score:.2f} below threshold {min_score}",
@@ -238,6 +285,44 @@ def execute_scope_gate(inputs: dict, params: dict) -> dict:
     return {
         "results_out": results,
         "_preview": f"✓ Passed (max_score={max_score:.2f})",
+    }
+
+
+def execute_retrieval_judge(inputs: dict, params: dict) -> dict:
+    """LLM-as-judge rerank: drops retrieved chunks that don't actually answer
+    the query. Catches negation / polarity flips that cosine similarity misses.
+
+    One batched LLM call per query (regardless of K). On any judge failure
+    we degrade to "keep everything" so a flaky judge can't hide good chunks.
+    """
+    query = inputs.get("query", "") or ""
+    candidates = inputs.get("results_in") or []
+    model = params.get("model", "gemma3:4b")
+    settings = Settings()
+
+    kept, verdicts = judge_retrieval(
+        query=query,
+        results=candidates,
+        model=model,
+        base_url=settings.ollama_base_url,
+    )
+
+    # Serialize verdicts for both downstream nodes and the chat panel.
+    trace = [
+        {
+            "i": v.index,
+            "keep": v.keep,
+            "reason": v.reason,
+            "source": v.source,
+            "score": round(v.score, 4),
+        }
+        for v in verdicts
+    ]
+    preview_payload = {"__rerank": True, "kept": len(kept), "total": len(candidates), "verdicts": trace}
+    return {
+        "results_out": kept,
+        "judge_trace": trace,
+        "_preview": json.dumps(preview_payload, ensure_ascii=False),
     }
 
 
@@ -431,7 +516,17 @@ def execute_generator(inputs: dict, params: dict) -> dict:
 
 
 def execute_output_critic(inputs: dict, params: dict) -> dict:
-    """Run a self-critique pass on the generator's answer."""
+    """Run a self-critique pass on the generator's answer.
+
+    Two visibility levels — gated by which input ports are wired:
+      - **Rules-only** (legacy): only `answer_in` connected. Checks the answer
+        against the negative-rules `criteria`. Can't catch hallucinations or
+        off-target answers — it doesn't know what was asked or retrieved.
+      - **Grounded**: when `query` and/or `retrieval` are also wired, the
+        critic additionally checks that the answer addresses the question and
+        is grounded in the retrieved context. Catches hallucinated specs and
+        off-target answers that rule checks alone miss.
+    """
     answer = inputs["answer_in"]
     if answer is None:
         return {"answer_out": None, "_preview": "(no input)"}
@@ -443,9 +538,25 @@ def execute_output_critic(inputs: dict, params: dict) -> dict:
 
     original_text = answer.text if hasattr(answer, "text") else str(answer)
 
-    if not criteria:
+    # Optional grounded-mode inputs
+    query = (inputs.get("query") or "") or ""
+    retrieval_results = inputs.get("retrieval") or []
+    reference_data = (inputs.get("reference_data") or "") or ""
+    context_text = ""
+    if retrieval_results:
+        # Cap each chunk and the total to keep the prompt small.
+        chunk_blocks = []
+        for i, r in enumerate(retrieval_results):
+            preview = (r.chunk.text if hasattr(r, "chunk") else "")[:400]
+            source = r.chunk.metadata.get("filename", "?") if hasattr(r, "chunk") else "?"
+            chunk_blocks.append(f"[{i}] (source={source})\n{preview}")
+        context_text = "\n\n".join(chunk_blocks)
+
+    grounded = bool(query.strip() or context_text.strip() or reference_data.strip())
+
+    if not criteria and not grounded:
         # Nothing to critique against — pass through with a neutral verdict
-        preview = json.dumps({"__critic": True, "verdict": "skip", "reason": "No criteria configured.", "revised": False})
+        preview = json.dumps({"__critic": True, "verdict": "skip", "reason": "No criteria or grounding inputs configured.", "revised": False, "grounded": False})
         return {"answer_out": answer, "_preview": preview}
 
     verdict = critique_answer(
@@ -453,6 +564,9 @@ def execute_output_critic(inputs: dict, params: dict) -> dict:
         criteria=criteria,
         model=model,
         base_url=settings.ollama_base_url,
+        query=query,
+        context=context_text,
+        reference=reference_data,
     )
 
     revised = False
@@ -469,7 +583,7 @@ def execute_output_critic(inputs: dict, params: dict) -> dict:
         )
         revised = True
     else:
-        print(f"[Executor:OutputCritic] {'PASS' if verdict.passed else 'FAIL (audit only)'}: {verdict.reason}")
+        print(f"[Executor:OutputCritic] {'PASS' if verdict.passed else 'FAIL (audit only)'}: {verdict.reason} [grounded={grounded}]")
 
     # Wrap the (possibly revised) text back into a GenerationResult
     new_answer = GenerationResult(
@@ -484,6 +598,7 @@ def execute_output_critic(inputs: dict, params: dict) -> dict:
         "reason": verdict.reason,
         "revised": revised,
         "mode": mode,
+        "grounded": grounded,
     }
     return {
         "answer_out": new_answer,
@@ -515,7 +630,9 @@ EXECUTORS: dict[str, callable] = {
     "reference_loader": execute_reference_loader,
     "query_input": execute_query_input,
     "guardrail": execute_guardrail,
+    "price_guard": execute_price_guard,
     "scope_gate": execute_scope_gate,
+    "retrieval_judge": execute_retrieval_judge,
     "product_selector": execute_product_selector,
     "retriever": execute_retriever,
     "prompt_builder": execute_prompt_builder,

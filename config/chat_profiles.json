@@ -2,8 +2,393 @@
   "active": "default",
   "profiles": {
     "default": {
-      "preset": "professional",
-      "custom_text": ""
+      "graph": {
+        "nodes": [
+          {
+            "id": "loader",
+            "type": "loader",
+            "position": {
+              "x": 0,
+              "y": 80
+            },
+            "params": {
+              "source_path": "./knowledge_base"
+            }
+          },
+          {
+            "id": "chunker",
+            "type": "chunker",
+            "position": {
+              "x": 280,
+              "y": 80
+            },
+            "params": {
+              "strategy": "section",
+              "chunk_size": 500,
+              "chunk_overlap": 50
+            }
+          },
+          {
+            "id": "embedder",
+            "type": "embedder",
+            "position": {
+              "x": 560,
+              "y": 80
+            },
+            "params": {
+              "model": "nomic-embed-text"
+            }
+          },
+          {
+            "id": "vstore",
+            "type": "vectorstore",
+            "position": {
+              "x": 840,
+              "y": 80
+            },
+            "params": {
+              "persist_path": "./chroma_db",
+              "collection_name": "rag_collection",
+              "wipe_collection": false
+            }
+          },
+          {
+            "id": "qinput",
+            "type": "query_input",
+            "position": {
+              "x": 0,
+              "y": 340
+            },
+            "params": {
+              "question": ""
+            }
+          },
+          {
+            "id": "guardrail",
+            "type": "guardrail",
+            "position": {
+              "x": 420,
+              "y": 340
+            },
+            "params": {
+              "blocked_keywords": "asus, acer, msi, hp, dell, apple",
+              "refusal_message": ""
+            }
+          },
+          {
+            "id": "priceguard",
+            "type": "price_guard",
+            "position": {
+              "x": 700,
+              "y": 340
+            },
+            "params": {}
+          },
+          {
+            "id": "retriever",
+            "type": "retriever",
+            "position": {
+              "x": 980,
+              "y": 340
+            },
+            "params": {
+              "top_k": 5,
+              "score_threshold": 0.0,
+              "keyword_boost": 0.5,
+              "embedding_model": "nomic-embed-text",
+              "product_filter": ""
+            }
+          },
+          {
+            "id": "rerank",
+            "type": "retrieval_judge",
+            "position": {
+              "x": 1260,
+              "y": 340
+            },
+            "params": {
+              "model": "gemma3:4b"
+            }
+          },
+          {
+            "id": "scopegate",
+            "type": "scope_gate",
+            "position": {
+              "x": 1540,
+              "y": 340
+            },
+            "params": {
+              "mode": "semantic",
+              "margin_threshold": 0.0,
+              "min_score": 0.7,
+              "embedding_model": "nomic-embed-text"
+            }
+          },
+          {
+            "id": "pbuilder",
+            "type": "prompt_builder",
+            "position": {
+              "x": 1820,
+              "y": 340
+            },
+            "params": {
+              "glossary": ""
+            }
+          },
+          {
+            "id": "generator",
+            "type": "generator",
+            "position": {
+              "x": 2100,
+              "y": 340
+            },
+            "params": {
+              "model": "gemma3:4b",
+              "format_type": ""
+            }
+          },
+          {
+            "id": "critic",
+            "type": "output_critic",
+            "position": {
+              "x": 2380,
+              "y": 340
+            },
+            "params": {
+              "criteria": "Do not mention competitor brand names like Asus, Acer, MSI, HP, Dell, or Apple.\nDo not promise specific pricing, availability, or release dates.\nDo not invent technical specifications not present in the source material.\nDo not use marketing buzzwords like \"amazing\", \"revolutionary\", \"industry-leading\", \"best-in-class\".",
+              "mode": "audit",
+              "model": "gemma3:4b"
+            }
+          },
+          {
+            "id": "display",
+            "type": "result_display",
+            "position": {
+              "x": 2660,
+              "y": 340
+            },
+            "params": {}
+          },
+          {
+            "id": "pselector",
+            "type": "product_selector",
+            "position": {
+              "x": 980,
+              "y": 540
+            },
+            "params": {
+              "mode": "rule",
+              "model": "gemma3:4b",
+              "aliases": "{\n  \"starforge\": [\n    \"星鋒\",\n    \"星峰\"\n  ],\n  \"visionbook\": [\n    \"維森書\",\n    \"視覺書\"\n  ],\n  \"novapad\": [\n    \"諾瓦\",\n    \"諾瓦帕\"\n  ],\n  \"titanbook\": [\n    \"泰坦書\",\n    \"鈦書\"\n  ],\n  \"luminos\": [\n    \"璐米諾\",\n    \"流明\"\n  ]\n}"
+            }
+          },
+          {
+            "id": "refloader",
+            "type": "reference_loader",
+            "position": {
+              "x": 1820,
+              "y": 540
+            },
+            "params": {
+              "source_path": "./knowledge_base/_reference"
+            }
+          },
+          {
+            "id": "sysprompt",
+            "type": "system_prompt",
+            "position": {
+              "x": 2100,
+              "y": 540
+            },
+            "params": {
+              "preset": "professional",
+              "text": ""
+            }
+          }
+        ],
+        "edges": [
+          {
+            "source": "loader",
+            "target": "chunker",
+            "sourceHandle": "documents",
+            "targetHandle": "documents"
+          },
+          {
+            "source": "chunker",
+            "target": "embedder",
+            "sourceHandle": "chunks",
+            "targetHandle": "chunks"
+          },
+          {
+            "source": "chunker",
+            "target": "vstore",
+            "sourceHandle": "chunks",
+            "targetHandle": "chunks"
+          },
+          {
+            "source": "embedder",
+            "target": "vstore",
+            "sourceHandle": "embeddings",
+            "targetHandle": "embeddings"
+          },
+          {
+            "source": "qinput",
+            "target": "guardrail",
+            "sourceHandle": "query",
+            "targetHandle": "query_in"
+          },
+          {
+            "source": "guardrail",
+            "target": "priceguard",
+            "sourceHandle": "query_out",
+            "targetHandle": "query_in"
+          },
+          {
+            "source": "priceguard",
+            "target": "retriever",
+            "sourceHandle": "query_out",
+            "targetHandle": "query"
+          },
+          {
+            "source": "vstore",
+            "target": "retriever",
+            "sourceHandle": "collection",
+            "targetHandle": "collection"
+          },
+          {
+            "source": "priceguard",
+            "target": "pselector",
+            "sourceHandle": "query_out",
+            "targetHandle": "query"
+          },
+          {
+            "source": "vstore",
+            "target": "pselector",
+            "sourceHandle": "collection",
+            "targetHandle": "collection"
+          },
+          {
+            "source": "refloader",
+            "target": "pselector",
+            "sourceHandle": "reference_data",
+            "targetHandle": "reference_data"
+          },
+          {
+            "source": "pselector",
+            "target": "retriever",
+            "sourceHandle": "product_id",
+            "targetHandle": "product_id"
+          },
+          {
+            "source": "priceguard",
+            "target": "rerank",
+            "sourceHandle": "query_out",
+            "targetHandle": "query"
+          },
+          {
+            "source": "retriever",
+            "target": "rerank",
+            "sourceHandle": "results",
+            "targetHandle": "results_in"
+          },
+          {
+            "source": "priceguard",
+            "target": "scopegate",
+            "sourceHandle": "query_out",
+            "targetHandle": "query"
+          },
+          {
+            "source": "rerank",
+            "target": "scopegate",
+            "sourceHandle": "results_out",
+            "targetHandle": "results_in"
+          },
+          {
+            "source": "priceguard",
+            "target": "pbuilder",
+            "sourceHandle": "query_out",
+            "targetHandle": "query"
+          },
+          {
+            "source": "scopegate",
+            "target": "pbuilder",
+            "sourceHandle": "results_out",
+            "targetHandle": "results"
+          },
+          {
+            "source": "refloader",
+            "target": "pbuilder",
+            "sourceHandle": "reference_data",
+            "targetHandle": "reference_data"
+          },
+          {
+            "source": "pbuilder",
+            "target": "generator",
+            "sourceHandle": "prompt",
+            "targetHandle": "prompt"
+          },
+          {
+            "source": "sysprompt",
+            "target": "generator",
+            "sourceHandle": "system_prompt",
+            "targetHandle": "system_prompt"
+          },
+          {
+            "source": "sysprompt",
+            "target": "generator",
+            "sourceHandle": "format_hint",
+            "targetHandle": "format_hint"
+          },
+          {
+            "source": "sysprompt",
+            "target": "guardrail",
+            "sourceHandle": "format_hint",
+            "targetHandle": "format_hint"
+          },
+          {
+            "source": "sysprompt",
+            "target": "priceguard",
+            "sourceHandle": "format_hint",
+            "targetHandle": "format_hint"
+          },
+          {
+            "source": "sysprompt",
+            "target": "scopegate",
+            "sourceHandle": "format_hint",
+            "targetHandle": "format_hint"
+          },
+          {
+            "source": "generator",
+            "target": "critic",
+            "sourceHandle": "answer",
+            "targetHandle": "answer_in"
+          },
+          {
+            "source": "priceguard",
+            "target": "critic",
+            "sourceHandle": "query_out",
+            "targetHandle": "query"
+          },
+          {
+            "source": "scopegate",
+            "target": "critic",
+            "sourceHandle": "results_out",
+            "targetHandle": "retrieval"
+          },
+          {
+            "source": "refloader",
+            "target": "critic",
+            "sourceHandle": "reference_data",
+            "targetHandle": "reference_data"
+          },
+          {
+            "source": "critic",
+            "target": "display",
+            "sourceHandle": "answer_out",
+            "targetHandle": "answer"
+          }
+        ]
+      }
     }
   }
 }

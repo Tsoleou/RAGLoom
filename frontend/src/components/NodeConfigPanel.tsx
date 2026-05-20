@@ -1,17 +1,18 @@
 import type { EditableNodeData, ParamDef } from "../types/pipeline";
-import { NODE_DEF_MAP } from "../data/nodeDefinitions";
+import { useNodeTypes } from "../hooks/useNodeTypes";
 
 interface Props {
   nodeId: string | null;
   data: EditableNodeData | null;
-  onParamChange: (nodeId: string, paramName: string, value: string | number) => void;
+  onParamChange: (nodeId: string, paramName: string, value: string | number | boolean) => void;
   onClose: () => void;
 }
 
 export function NodeConfigPanel({ nodeId, data, onParamChange, onClose }: Props) {
+  const { byTypeId } = useNodeTypes();
   if (!nodeId || !data) return null;
 
-  const def = NODE_DEF_MAP[data.typeId];
+  const def = byTypeId[data.typeId];
   const paramDefs: ParamDef[] = def?.params || [];
 
   return (
@@ -67,7 +68,7 @@ export function NodeConfigPanel({ nodeId, data, onParamChange, onClose }: Props)
                 <label className="text-xs text-[#999] block mb-1">{p.label}</label>
                 <input
                   type="number"
-                  value={value}
+                  value={String(value)}
                   onChange={(e) => onParamChange(nodeId, p.name, parseFloat(e.target.value) || 0)}
                   className="w-full text-xs border border-[#333] rounded px-2 py-1.5 bg-[#1a1a1a] text-[#c0c0c0] focus:outline-none focus:ring-1 focus:ring-[#e07830] font-mono"
                 />
@@ -85,6 +86,23 @@ export function NodeConfigPanel({ nodeId, data, onParamChange, onClose }: Props)
                   rows={6}
                   className="w-full text-xs border border-[#333] rounded px-2 py-1.5 bg-[#1a1a1a] text-[#c0c0c0] focus:outline-none focus:ring-1 focus:ring-[#e07830] font-mono resize-y leading-relaxed"
                 />
+              </div>
+            );
+          }
+
+          if (p.type === "boolean") {
+            const checked = value === true || value === "true";
+            return (
+              <div key={p.name}>
+                <label className="flex items-center gap-2 text-xs text-[#999] cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    onChange={(e) => onParamChange(nodeId, p.name, e.target.checked)}
+                    className="accent-[#e07830]"
+                  />
+                  <span>{p.label}</span>
+                </label>
               </div>
             );
           }

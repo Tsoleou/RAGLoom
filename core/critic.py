@@ -35,28 +35,68 @@ def critique_answer(
     criteria: str,
     model: str = "gemma3:4b",
     base_url: str = "http://localhost:11434",
+    query: str = "",
+    context: str = "",
+    reference: str = "",
 ) -> CritiqueResult:
     """Run an LLM critique pass against the given answer.
+
+    Two operating modes:
+      - **Rules-only** (default): checks the answer against `criteria` only.
+      - **Grounded**: when `query` and/or `context` are provided, also checks
+        whether the answer (1) addresses the actual question and (2) stays
+        grounded in the retrieved context. Catches hallucinated specs and
+        off-target answers that pure rule-checks miss.
 
     Returns CritiqueResult with pass/fail + short reason.
     Network/parse failures degrade gracefully to "passed=True" so a flaky
     critic never blocks a correct answer reaching the user.
     """
-    system = (
-        "You are a strict quality reviewer. You will receive a candidate answer "
-        "and a list of negative rules (things the answer must NOT do). "
-        "Decide if the answer respects every rule.\n\n"
-        "Output ONLY a valid JSON object with exactly two fields:\n"
-        '- "pass": boolean — true if the answer respects all rules, false otherwise.\n'
-        '- "reason": short string explaining the verdict (max 1 sentence).\n\n'
-        'Example PASS: {"pass": true, "reason": "No rules violated."}\n'
-        'Example FAIL: {"pass": false, "reason": "Mentions competitor brand Asus."}'
-    )
-    user = (
-        f"[Negative Rules]\n{criteria.strip()}\n\n"
-        f"[Candidate Answer]\n{answer_text.strip()}\n\n"
-        "Verdict:"
-    )
+    grounded = bool((query or "").strip() or (context or "").strip() or (reference or "").strip())
+
+    if grounded:
+        system = (
+            "You are a strict quality reviewer. You will receive a user question, "
+            "retrieved context, optional reference material, a candidate answer, "
+            "and a list of negative rules.\n\n"
+            "Decide if the answer:\n"
+            "1. Actually addresses the user's question.\n"
+            "2. Uses ONLY facts present in the retrieved context OR the reference "
+            "material — do not let it invent specs, model names, prices, or "
+            "features that appear in NEITHER source.\n"
+            "3. Respects every negative rule below.\n\n"
+            "Output ONLY a valid JSON object with exactly two fields:\n"
+            '- "pass": boolean — true only if ALL three conditions hold.\n'
+            '- "reason": short string explaining the verdict (max 1 sentence).\n\n'
+            'Example PASS: {"pass": true, "reason": "Grounded answer to the question."}\n'
+            'Example FAIL: {"pass": false, "reason": "Cited a clock speed not in the context."}'
+        )
+        user_parts = []
+        if query.strip():
+            user_parts.append(f"[User Question]\n{query.strip()}")
+        if context.strip():
+            user_parts.append(f"[Retrieved Context]\n{context.strip()}")
+        if reference.strip():
+            user_parts.append(f"[Reference Material]\n{reference.strip()}")
+        user_parts.append(f"[Negative Rules]\n{criteria.strip()}")
+        user_parts.append(f"[Candidate Answer]\n{answer_text.strip()}")
+        user = "\n\n".join(user_parts) + "\n\nVerdict:"
+    else:
+        system = (
+            "You are a strict quality reviewer. You will receive a candidate answer "
+            "and a list of negative rules (things the answer must NOT do). "
+            "Decide if the answer respects every rule.\n\n"
+            "Output ONLY a valid JSON object with exactly two fields:\n"
+            '- "pass": boolean — true if the answer respects all rules, false otherwise.\n'
+            '- "reason": short string explaining the verdict (max 1 sentence).\n\n'
+            'Example PASS: {"pass": true, "reason": "No rules violated."}\n'
+            'Example FAIL: {"pass": false, "reason": "Mentions competitor brand Asus."}'
+        )
+        user = (
+            f"[Negative Rules]\n{criteria.strip()}\n\n"
+            f"[Candidate Answer]\n{answer_text.strip()}\n\n"
+            "Verdict:"
+        )
     full_prompt = f"{system}\n\n[User Request]: {user}"
 
     try:

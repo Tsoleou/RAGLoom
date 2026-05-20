@@ -11,6 +11,7 @@ from typing import Any, Callable
 from api.executors import EXECUTORS
 from core.guardrail import GuardrailBlocked
 from core.scope_gate import ScopeBlocked
+from core.price_guard import PriceGuardBlocked
 
 
 # Status constants
@@ -66,11 +67,16 @@ def build_input_map(
     node_id: str,
     edges: list[dict],
     outputs: dict[str, dict[str, Any]],
+    overrides: dict[str, dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """收集某個節點的所有 input 資料。
 
     根據 edges 找到所有指向 node_id 的連線，
     從上游節點的 outputs 中取出對應的資料。
+
+    `overrides`：caller 端注入的補丁，僅補上 edges 沒提供的 port。
+    例如 chat path 沒接 vectorstore 節點時，由 caller 端把 collection
+    從 Settings 注入給 retriever / product_selector。
     """
     inputs: dict[str, Any] = {}
     for edge in edges:
@@ -84,6 +90,10 @@ def build_input_map(
             if source_id in outputs and source_handle in outputs[source_id]:
                 inputs[target_handle] = outputs[source_id][source_handle]
 
+    if overrides:
+        for port, value in (overrides.get(node_id) or {}).items():
+            inputs.setdefault(port, value)
+
     return inputs
 
 
@@ -91,16 +101,24 @@ def execute_graph(
     nodes: list[dict],
     edges: list[dict],
     on_status: Callable[[str, str, str], None] | None = None,
-) -> dict[str, Any]:
+    input_overrides: dict[str, dict[str, Any]] | None = None,
+    return_outputs: bool = False,
+) -> Any:
     """執行整個 graph。
 
     Args:
         nodes: 前端傳來的節點陣列，每個包含 id, type, params
         edges: 前端傳來的連線陣列
         on_status: callback(node_id, status, preview) 用於即時通知
+        input_overrides: {node_id: {port_name: value}} — 補上 edges 沒提供
+            的 input port（例如 chat 路徑沒拉 vectorstore 時的 collection）
+        return_outputs: True 時回傳 (results, outputs)，讓 caller 端可以從
+            generator/retriever/critic 等節點取結構化輸出。預設 False 維持
+            既有 caller 介面。
 
     Returns:
-        dict: {node_id: {"status": "done", "preview": "..."}, ...}
+        dict: {node_id: {"status": "done", "preview": "...", "blocked"?: {...}}, ...}
+        若 return_outputs=True，改回傳 (results, outputs)。
     """
     def notify(node_id: str, status: str, preview: str = "") -> None:
         if on_status:
@@ -133,7 +151,7 @@ def execute_graph(
             continue
 
         # 收集 inputs
-        inputs = build_input_map(nid, edges, outputs)
+        inputs = build_input_map(nid, edges, outputs, input_overrides)
 
         notify(nid, STATUS_RUNNING)
 
@@ -144,12 +162,27 @@ def execute_graph(
             outputs[nid] = output
             results[nid] = {"status": STATUS_DONE, "preview": preview}
             notify(nid, STATUS_DONE, preview)
-        except (GuardrailBlocked, ScopeBlocked) as blocked:
+        except (GuardrailBlocked, ScopeBlocked, PriceGuardBlocked) as blocked:
             # Short-circuit: mark the gate node itself as "blocked", mirror
             # the refusal onto any result_display nodes, stop execution.
-            # Same handling for both gates (brand keyword + scope threshold).
+            # Same handling for all guards in the family.
             blocked_preview = f"⊘ BLOCKED\nMatched: {blocked.matched_keyword}\n\n{blocked.refusal_message}"
-            results[nid] = {"status": STATUS_BLOCKED, "preview": blocked_preview}
+            if isinstance(blocked, GuardrailBlocked):
+                gate_kind = "guardrail"
+            elif isinstance(blocked, PriceGuardBlocked):
+                gate_kind = "price_guard"
+            else:
+                gate_kind = "scope_gate"
+            blocked_meta = {
+                "kind": gate_kind,
+                "matched": blocked.matched_keyword,
+                "refusal": blocked.refusal_message,
+            }
+            results[nid] = {
+                "status": STATUS_BLOCKED,
+                "preview": blocked_preview,
+                "blocked": blocked_meta,
+            }
             notify(nid, STATUS_BLOCKED, blocked_preview)
 
             for other_nid in order:
@@ -162,7 +195,6 @@ def execute_graph(
                     }
                     notify(other_nid, STATUS_BLOCKED, blocked.refusal_message)
 
-            gate_kind = "guardrail" if isinstance(blocked, GuardrailBlocked) else "scope_gate"
             print(f"[Engine] Pipeline short-circuited by {gate_kind} at '{nid}' (matched: {blocked.matched_keyword})")
             break
         except Exception as e:
@@ -172,4 +204,6 @@ def execute_graph(
             print(f"[Engine] Node '{nid}' failed: {error_msg}")
             break
 
+    if return_outputs:
+        return results, outputs
     return results

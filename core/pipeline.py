@@ -23,7 +23,11 @@ from core.generator import generate, GenerationResult
 from core.personas import get_preset, PROFESSIONAL
 from core.price_guard import is_price_query, refusal_message as price_refusal_message
 from core.product_matcher import detect_product_filter
-from core.scope_gate import check_scope_semantic, refusal_message as scope_refusal_message
+from core.scope_gate import (
+    check_scope_semantic,
+    is_bypass as scope_is_bypass,
+    refusal_message as scope_refusal_message,
+)
 
 
 class RAGPipeline:
@@ -40,6 +44,7 @@ class RAGPipeline:
         self.collection = create_collection(self.client)
         self._messages = []  # Ollama 多輪對話歷史（user + assistant，不含 system）
         self._last_retrieval = []  # 最近一次檢索結果
+        self._last_guards: list[dict] = []  # 最近一次每層 guard 的決策軌跡
         # Always-on reference data (product comparison tables, etc.)
         self._reference_data = load_reference_text("./knowledge_base/_reference")
         # Cached at init to avoid scanning collection metadata on every query;
@@ -126,6 +131,9 @@ class RAGPipeline:
         """
         mode = mode or self.config.output_mode
 
+        # Reset per-query guard trace so the UI only sees this turn's decisions.
+        self._last_guards = []
+
         # Resolve persona once up front so any short-circuit refusal
         # (price guard / scope gate) can format itself in the right shape.
         persona = self._resolve_persona(mode, graph_preset, graph_custom_text)
@@ -137,6 +145,8 @@ class RAGPipeline:
         # as brand Guardrail and ScopeGate.
         if is_price_query(question):
             print(f"[Pipeline] Price guard SHORT-CIRCUITED: {question[:60]}")
+            self._last_guards.append({"name": "PriceGuard", "status": "block", "detail": "price intent matched"})
+            self._last_guards.append({"name": "ScopeGate", "status": "skip", "detail": "upstream blocked"})
             refusal = price_refusal_message(question, format_hint=persona.format_hint)
             self._last_retrieval = []
             return GenerationResult(
@@ -144,6 +154,7 @@ class RAGPipeline:
                 messages=self._messages,
                 model=self.config.llm_model,
             )
+        self._last_guards.append({"name": "PriceGuard", "status": "pass"})
 
         # 1. Retrieve — try hard-filter routing first when the query unambiguously
         # names one product. nomic-embed-text alone can't separate products in a
@@ -181,19 +192,26 @@ class RAGPipeline:
             # mode on bridge attacks ("is the dog like a laptop?") because
             # off-topic tokens carry more weight than the generic "laptop"
             # background term in product chunks.
-            scope_allowed, margin = check_scope_semantic(
-                question,
-                embedding_model=self.config.embedding_model,
-                base_url=self.config.ollama_base_url,
-            )
-            if not scope_allowed:
-                print(f"[Pipeline] Scope gate BLOCKED (margin={margin:+.3f}): {question[:60]}")
-                refusal = scope_refusal_message(question, format_hint=persona.format_hint)
-                return GenerationResult(
-                    text=refusal,
-                    messages=self._messages,  # don't pollute history with refusal
-                    model=self.config.llm_model,
+            if scope_is_bypass(question):
+                self._last_guards.append({"name": "ScopeGate", "status": "skip", "detail": "greeting / short"})
+            else:
+                scope_allowed, margin = check_scope_semantic(
+                    question,
+                    embedding_model=self.config.embedding_model,
+                    base_url=self.config.ollama_base_url,
                 )
+                if not scope_allowed:
+                    print(f"[Pipeline] Scope gate BLOCKED (margin={margin:+.3f}): {question[:60]}")
+                    self._last_guards.append({"name": "ScopeGate", "status": "block", "detail": f"margin={margin:+.3f}"})
+                    refusal = scope_refusal_message(question, format_hint=persona.format_hint)
+                    return GenerationResult(
+                        text=refusal,
+                        messages=self._messages,  # don't pollute history with refusal
+                        model=self.config.llm_model,
+                    )
+                self._last_guards.append({"name": "ScopeGate", "status": "pass", "detail": f"margin={margin:+.3f}"})
+        else:
+            self._last_guards.append({"name": "ScopeGate", "status": "skip", "detail": f"product routed ({product_id})"})
 
         # 3. Build context-only prompt
         prompt = build_prompt(
@@ -251,6 +269,7 @@ class RAGPipeline:
         self.collection = create_collection(self.client)
         self._messages = []
         self._last_retrieval = []
+        self._last_guards = []
         self._product_ids = set()
         print(f"[Pipeline] Collection '{name}' reset")
 
@@ -271,4 +290,5 @@ class RAGPipeline:
         """清除多輪對話 context（不影響知識庫）。"""
         self._messages = []
         self._last_retrieval = []
+        self._last_guards = []
         print("[Pipeline] Conversation context cleared")

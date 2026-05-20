@@ -11,8 +11,8 @@ export interface PortDef {
 export interface ParamDef {
   name: string;
   label: string;
-  type: "string" | "number" | "select" | "textarea";
-  default: string | number;
+  type: "string" | "number" | "select" | "textarea" | "boolean";
+  default: string | number | boolean;
   options?: string[];
 }
 
@@ -27,13 +27,15 @@ export interface NodeTypeDef {
   params: ParamDef[];
 }
 
-export interface EditableNodeData {
+// Extends Record<string, unknown> so it satisfies @xyflow/react's Node<T>
+// data constraint — a plain interface has no index signature otherwise.
+export interface EditableNodeData extends Record<string, unknown> {
   typeId: string;
   label: string;
   labelEn: string;
   inputs: PortDef[];
   outputs: PortDef[];
-  params: Record<string, string | number>;
+  params: Record<string, string | number | boolean>;
   status: NodeStatus;
   preview: string;
 }

@@ -1,4 +1,4 @@
-import { NODE_DEFINITIONS } from "../data/nodeDefinitions";
+import { useNodeTypes } from "../hooks/useNodeTypes";
 import type { NodeTypeDef } from "../types/pipeline";
 
 const CATEGORY_LABELS: Record<string, string> = {
@@ -14,10 +14,11 @@ interface Props {
 }
 
 export function NodePalette({ onDragStart }: Props) {
+  const { nodeTypes, loading, error } = useNodeTypes();
   const grouped = CATEGORY_ORDER.map((cat) => ({
     category: cat,
     label: CATEGORY_LABELS[cat] || cat,
-    nodes: NODE_DEFINITIONS.filter((d) => d.category === cat),
+    nodes: nodeTypes.filter((d) => d.category === cat),
   })).filter((g) => g.nodes.length > 0);
 
   return (
@@ -28,6 +29,12 @@ export function NodePalette({ onDragStart }: Props) {
       </div>
 
       <div className="flex-1 overflow-y-auto p-3 space-y-4">
+        {loading && (
+          <div className="text-[10px] text-[#555] py-2">Loading node types…</div>
+        )}
+        {error && (
+          <div className="text-[10px] text-[#f0a040] py-2">Failed to load: {error}</div>
+        )}
         {grouped.map((group) => (
           <div key={group.category}>
             <div className="text-[10px] font-medium text-[#666] uppercase tracking-wider mb-2">

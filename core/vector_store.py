@@ -58,6 +58,7 @@ def add_chunks(
     collection: chromadb.Collection,
     chunks: List[Chunk],
     embeddings: List[List[float]],
+    upsert: bool = False,
 ) -> None:
     """將 chunks 和對應的向量寫入 collection。
 
@@ -65,6 +66,9 @@ def add_chunks(
         collection: 目標 collection。
         chunks: 要寫入的 chunk 清單。
         embeddings: 每個 chunk 對應的向量（順序必須一致）。
+        upsert: True 時以 upsert 語意寫入（已存在的 ID 會被覆寫，新的 ID
+            插入），讓重跑同一個 graph 不會因為 ID 撞名直接報錯。預設 False
+            維持 strict insert 行為。
 
     Raises:
         ValueError: chunks 和 embeddings 數量不一致。
@@ -84,13 +88,22 @@ def add_chunks(
     documents = [chunk.text for chunk in chunks]
     metadatas = [chunk.metadata for chunk in chunks]
 
-    collection.add(
-        ids=ids,
-        documents=documents,
-        embeddings=embeddings,
-        metadatas=metadatas,
-    )
-    print(f"[VectorStore] Added {len(chunks)} chunks to '{collection.name}' (total: {collection.count()})")
+    if upsert:
+        collection.upsert(
+            ids=ids,
+            documents=documents,
+            embeddings=embeddings,
+            metadatas=metadatas,
+        )
+    else:
+        collection.add(
+            ids=ids,
+            documents=documents,
+            embeddings=embeddings,
+            metadatas=metadatas,
+        )
+    op = "upserted" if upsert else "added"
+    print(f"[VectorStore] {op.capitalize()} {len(chunks)} chunks to '{collection.name}' (total: {collection.count()})")
 
 
 def query(

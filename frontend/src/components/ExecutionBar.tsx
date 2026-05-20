@@ -8,7 +8,7 @@ interface Props {
   onCancel: () => void;
   onClear: () => void;
   onSaveProfile: (name: string) => Promise<void>;
-  profiles: Record<string, { preset: string; custom_text: string }>;
+  profiles: Record<string, unknown>;
   onLoadProfile: (name: string) => void;
 }
 

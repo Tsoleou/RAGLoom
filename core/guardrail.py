@@ -6,6 +6,7 @@ refuse to answer politely. Used by both the chat endpoint and the Guardrail
 node — single source of truth, single refusal behavior.
 """
 
+import json
 import re
 
 
@@ -34,6 +35,17 @@ class GuardrailBlocked(Exception):
 def parse_keywords(raw: str) -> list[str]:
     """Parse a comma-separated keyword string into a clean list."""
     return [kw.strip() for kw in raw.split(",") if kw.strip()]
+
+
+def format_refusal(refusal_text: str, format_hint=None) -> str:
+    """Wrap a refusal in chatbot JSON shape when format_hint requests it.
+
+    Mirrors the pattern used by scope_gate / price_guard so all three gates
+    produce consistent output when the downstream Generator expects JSON.
+    """
+    if isinstance(format_hint, dict) or format_hint == "json":
+        return json.dumps({"reply": refusal_text, "emotion": "idle"}, ensure_ascii=False)
+    return refusal_text
 
 
 def check_query(

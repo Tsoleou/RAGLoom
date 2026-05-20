@@ -42,6 +42,22 @@ _PRICE_PATTERNS = [
 ]
 _PRICE_RE = re.compile("|".join(_PRICE_PATTERNS), re.IGNORECASE)
 
+
+class PriceGuardBlocked(Exception):
+    """Raised when a query is blocked by the price guard.
+
+    Mirrors GuardrailBlocked / ScopeBlocked so the node engine can treat all
+    three with the same STATUS_BLOCKED short-circuit handler.
+    """
+
+    def __init__(self, reason: str, refusal_message: str):
+        super().__init__(reason)
+        self.reason = reason
+        self.refusal_message = refusal_message
+        # Engine's blocked-handler logs `matched_keyword`. Price detection is
+        # regex-based with no single token, so surface a synthetic marker.
+        self.matched_keyword = "price_intent"
+
 _REFUSAL_EN = (
     "I don't have pricing info here at the booth — that's set by our retail "
     "partners, and the staff can pull up the exact numbers for you. In the "

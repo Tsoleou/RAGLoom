@@ -40,21 +40,24 @@ DEFAULT_ON_TOPIC_ANCHORS: list[str] = [
     "Questions about laptop computers, their specs, prices, or features",
     "Asking which laptop is best for gaming, work, school, or creative use",
     "Comparing laptop products across brands or models",
-    "Questions about laptop hardware: CPU, GPU, RAM, screen, battery, or weight",
+    "Questions about laptop hardware: CPU, GPU, RAM, screen, battery, weight, cooling, or thermal design",
     "Questions about specific laptop models, brands, or product lines",
     "筆記型電腦的規格、價格、功能或推薦",
-    "詢問筆電的處理器、顯示卡、記憶體、螢幕等硬體",
+    "詢問筆電的處理器、顯示卡、記憶體、螢幕、電池、散熱等硬體",
     "詢問哪一款筆電適合特定用途",
 ]
 
+# Off-topic anchors: 't include "weather" — embeddings treat it as semantically
+# close to "cooling/temperature", which leaks borderline thermal-spec queries
+# (e.g., "what cooling does X use?") into the off-topic centroid.
 DEFAULT_OFF_TOPIC_ANCHORS: list[str] = [
     "Questions about finance, stock prices, investments, or markets",
     "Questions about unrelated daily-life topics like pets, food, sports, or entertainment",
-    "Questions about weather, news, or current events",
+    "Questions about current events, breaking news, or politics",
     "Personal advice or chit-chat unrelated to consumer electronics",
     "關於金融、股市、投資、理財的問題",
     "與筆電產品無關的日常生活話題（飲食、寵物、運動、娛樂等）",
-    "關於天氣、新聞、時事的問題",
+    "關於新聞、時事、政治的問題",
     "與消費電子無關的個人建議或閒聊",
 ]
 
@@ -126,6 +129,15 @@ def refusal_message(query: str, format_hint=None) -> str:
     if isinstance(format_hint, dict) or format_hint == "json":
         return json.dumps({"reply": text, "emotion": "idle"}, ensure_ascii=False)
     return text
+
+
+def is_bypass(query: str) -> bool:
+    """True if a greeting / short query that should bypass the scope check.
+
+    Exposed so callers (pipeline trace, executors) can distinguish a *bypass*
+    from a real "in-scope" pass without re-deriving the rule.
+    """
+    return bool(GREETING_RE.match(query)) or len(query.strip()) < SHORT_QUERY_LEN
 
 
 def check_scope(

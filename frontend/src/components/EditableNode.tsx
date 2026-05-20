@@ -1,6 +1,6 @@
 import { Handle, Position, useReactFlow } from "@xyflow/react";
 import type { NodeProps } from "@xyflow/react";
-import type { EditableNodeData } from "../types/pipeline";
+import type { EditableNodeData, FlowNode } from "../types/pipeline";
 import { parseChatbotOutput, getEmotionTheme } from "../utils/chatbotOutput";
 import { parseCriticOutput, getCriticTheme } from "../utils/criticOutput";
 
@@ -37,7 +37,7 @@ export function EditableNode({
   data,
   selected,
 }: NodeProps & { data: EditableNodeData }) {
-  const { setNodes } = useReactFlow();
+  const { setNodes } = useReactFlow<FlowNode>();
   const style = STATUS_STYLES[data.status] || STATUS_STYLES.idle;
   const isResultDisplay = data.typeId === "result_display";
   const isOutputCritic = data.typeId === "output_critic";

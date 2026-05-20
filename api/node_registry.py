@@ -28,8 +28,8 @@ class ParamDef:
     """節點參數定義。"""
     name: str
     label: str
-    param_type: str  # "string", "number", "select"
-    default: str | int | float
+    param_type: str  # "string", "number", "select", "textarea", "boolean"
+    default: str | int | float | bool
     options: list[str] = field(default_factory=list)  # for select type
 
 
@@ -104,7 +104,12 @@ _register(NodeType(
     type_id="vectorstore",
     label="Vector Store",
     label_en="VectorStore",
-    description="Store chunks and embeddings in ChromaDB.",
+    description=(
+        "Store chunks and embeddings in ChromaDB. Default behavior upserts — "
+        "re-running the pipeline updates / inserts but preserves existing data, "
+        "so test runs in the Editor don't blow away ChatView's ingested KB. "
+        "Toggle `wipe_collection` on for a hard rebuild (drop + reload)."
+    ),
     category="ingest",
     inputs=[
         Port("chunks", "chunks", "Chunks"),
@@ -114,6 +119,7 @@ _register(NodeType(
     params=[
         ParamDef("persist_path", "Persist Path", "string", "./chroma_db"),
         ParamDef("collection_name", "Collection Name", "string", "rag_collection"),
+        ParamDef("wipe_collection", "Wipe Before Write", "boolean", False),
     ],
 ))
 
@@ -155,7 +161,10 @@ _register(NodeType(
     # Note: input/output port names must differ — ReactFlow handles use port name
     # as the DOM id, so identical names on the same node create id collisions and
     # edges silently fail to render.
-    inputs=[Port("query_in", "query", "Query Text")],
+    inputs=[
+        Port("query_in", "query", "Query Text"),
+        Port("format_hint", "format_hint", "Format Hint"),
+    ],
     outputs=[Port("query_out", "query", "Query Text")],
     params=[
         ParamDef("blocked_keywords", "Blocked Keywords", "string", "asus, acer, msi, hp, dell, apple"),
@@ -169,6 +178,27 @@ _register(NodeType(
             ),
         ),
     ],
+))
+
+# --- Price Guard ---
+_register(NodeType(
+    type_id="price_guard",
+    label="Price Guard",
+    label_en="PriceGuard",
+    description=(
+        "Block queries asking about price, cost, MSRP, or discounts. The KB "
+        "carries no pricing data, but small LLMs fabricate dollar amounts under "
+        "direct pressure — detecting the intent in code is more reliable than "
+        "prompt rules. Pattern-matches EN + ZH price phrases (\"how much\", \"售價\", "
+        "\"$\", \"折扣\", etc.) and short-circuits with a language-aware canned refusal."
+    ),
+    category="query",
+    inputs=[
+        Port("query_in", "query", "Query Text"),
+        Port("format_hint", "format_hint", "Format Hint"),
+    ],
+    outputs=[Port("query_out", "query", "Query Text")],
+    params=[],
 ))
 
 # --- Scope Gate ---
@@ -188,6 +218,7 @@ _register(NodeType(
     inputs=[
         Port("results_in", "results", "RetrievalResults"),
         Port("query", "query", "Query Text"),
+        Port("format_hint", "format_hint", "Format Hint"),
     ],
     outputs=[Port("results_out", "results", "RetrievalResults")],
     params=[
@@ -209,6 +240,34 @@ _register(NodeType(
         ParamDef("embedding_model", "Embedding Model (semantic mode)", "string", "nomic-embed-text"),
     ],
 ))
+
+# --- Retrieval Judge ---
+_register(NodeType(
+    type_id="retrieval_judge",
+    label="Retrieval Judge",
+    label_en="RetrievalJudge",
+    description=(
+        "LLM-as-judge rerank: drops retrieved chunks that don't actually answer "
+        "the query. Catches polarity / negation failures that cosine similarity "
+        "misses — e.g., a chunk literally saying 'NOT suitable for high-performance' "
+        "no longer ranks as a high-performance recommendation. One batched LLM call "
+        "per query (independent of K). Degrades to keep-everything on any judge "
+        "error so a flaky model can't hide good chunks."
+    ),
+    category="query",
+    inputs=[
+        Port("query", "query", "Query Text"),
+        Port("results_in", "results", "RetrievalResults"),
+    ],
+    outputs=[
+        Port("results_out", "results", "RetrievalResults"),
+        Port("judge_trace", "judge_trace", "Judge Trace"),
+    ],
+    params=[
+        ParamDef("model", "Model", "string", "gemma3:4b"),
+    ],
+))
+
 
 # --- Product Selector ---
 _register(NodeType(
@@ -341,9 +400,21 @@ _register(NodeType(
     type_id="output_critic",
     label="Output Critic",
     label_en="OutputCritic",
-    description="Run a second LLM pass to check the answer against negative rules. Can audit (label) or revise (rewrite) the answer.",
+    description=(
+        "Run a second LLM pass to check the answer against negative rules. "
+        "Can audit (label) or revise (rewrite) the answer. When the optional "
+        "`query` and `retrieval` ports are wired, the critic switches to "
+        "grounded mode and also verifies the answer (1) addresses the question "
+        "and (2) stays grounded in the retrieved context — catches hallucinated "
+        "specs and off-target answers that rule checks alone miss."
+    ),
     category="query",
-    inputs=[Port("answer_in", "answer", "Answer")],
+    inputs=[
+        Port("answer_in", "answer", "Answer"),
+        Port("query", "query", "Query Text"),
+        Port("retrieval", "results", "RetrievalResults"),
+        Port("reference_data", "reference", "Reference Data"),
+    ],
     outputs=[Port("answer_out", "answer", "Answer")],
     params=[
         ParamDef(

@@ -9,7 +9,6 @@ import {
 } from "../utils/chatbotOutput";
 
 type AvatarState = "idle" | "think" | "talk" | "happy" | "error";
-type Mode = "professional" | "chatbot";
 
 interface ChatMessage {
   role: "user" | "assistant";
@@ -26,6 +25,35 @@ interface RetrievalRow {
   preview: string;
 }
 
+type GuardStatus = "pass" | "block" | "skip";
+
+interface GuardRow {
+  name: string;
+  status: GuardStatus;
+  detail?: string | null;
+}
+
+interface CritiqueRow {
+  verdict: string;
+  reason: string;
+  revised: boolean;
+  grounded?: boolean;
+}
+
+interface RerankVerdict {
+  i: number;
+  keep: boolean;
+  reason: string;
+  source: string;
+  score: number;
+}
+
+interface RerankTrace {
+  kept: number;
+  total: number;
+  verdicts: RerankVerdict[];
+}
+
 interface QueryResponse {
   status: "ok" | "error";
   message?: string;
@@ -35,16 +63,17 @@ interface QueryResponse {
   top_k?: number;
   blocked?: boolean;
   blocked_reason?: string;
+  guards?: GuardRow[];
+  rerank?: RerankTrace | null;
+  critique?: CritiqueRow | null;
 }
 
-interface Profile {
-  preset: string;
-  custom_text: string;
-}
+// Chat now executes the active profile's full graph; we just need the names.
+type ProfileMap = Record<string, unknown>;
 
 interface ProfilesResponse {
   active: string;
-  profiles: Record<string, Profile>;
+  profiles: ProfileMap;
 }
 
 const RAG_LOOM_ASCII = `\
@@ -77,7 +106,6 @@ export function ChatView() {
   const [avatarMessage, setAvatarMessage] = useState("");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
-  const [mode, setMode] = useState<Mode>("professional");
   type KBStatus = "idle" | "loading" | "loaded" | "error";
   const [kbStatus, setKbStatus] = useState<KBStatus>("idle");
   const [kbChunks, setKbChunks] = useState<number | null>(null);
@@ -85,10 +113,13 @@ export function ChatView() {
   const [chatLoading, setChatLoading] = useState(false);
   const loaded = kbStatus === "loaded";
   const [retrieval, setRetrieval] = useState<RetrievalRow[]>([]);
+  const [guards, setGuards] = useState<GuardRow[]>([]);
+  const [rerank, setRerank] = useState<RerankTrace | null>(null);
+  const [critique, setCritique] = useState<CritiqueRow | null>(null);
   const [threshold, setThreshold] = useState<number | null>(null);
   const [topK, setTopK] = useState<number | null>(null);
   const [showRetrieval, setShowRetrieval] = useState(false);
-  const [profiles, setProfiles] = useState<Record<string, Profile>>({ default: { preset: "professional", custom_text: "" } });
+  const [profiles, setProfiles] = useState<ProfileMap>({ default: {} });
   const [activeProfile, setActiveProfile] = useState<string>("default");
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -154,28 +185,23 @@ export function ChatView() {
     setAvatarState("think");
     setAvatarMessage("Searching...");
     try {
-      const activeProf = profiles[activeProfile];
       const res = await fetch("/api/chat/query", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          message: text,
-          mode,
-          graph_preset: activeProfile !== "default" ? activeProf?.preset : undefined,
-          graph_custom_text: activeProfile !== "default" ? activeProf?.custom_text : undefined,
-        }),
+        body: JSON.stringify({ message: text }),
       });
       const data: QueryResponse = await res.json();
       if (data.status === "ok" && data.reply !== undefined) {
         let replyContent = data.reply;
         let emotion: string | undefined;
 
-        if (!data.blocked && mode === "chatbot") {
-          const parsed = parseChatbotOutput(data.reply);
-          if (parsed) {
-            replyContent = parsed.reply;
-            emotion = parsed.emotion;
-          }
+        // The graph's SystemPrompt decides output format. Try parsing
+        // chatbot-style JSON regardless of who picked it; if it isn't JSON,
+        // parseChatbotOutput returns null and we just render the raw reply.
+        const parsed = parseChatbotOutput(data.reply);
+        if (parsed) {
+          replyContent = parsed.reply;
+          emotion = parsed.emotion;
         }
 
         setMessages((m) => [
@@ -183,6 +209,9 @@ export function ChatView() {
           { role: "assistant", content: replyContent, blocked: data.blocked, emotion },
         ]);
         setRetrieval(data.retrieval || []);
+        setGuards(data.guards || []);
+        setRerank(data.rerank ?? null);
+        setCritique(data.critique ?? null);
         setThreshold(data.threshold ?? null);
         setTopK(data.top_k ?? null);
 
@@ -233,6 +262,9 @@ export function ChatView() {
     await fetch("/api/chat/reset", { method: "POST" });
     setMessages([]);
     setRetrieval([]);
+    setGuards([]);
+    setRerank(null);
+    setCritique(null);
     setShowRetrieval(false);
     setKbStatus("idle");
     setKbChunks(null);
@@ -293,28 +325,6 @@ export function ChatView() {
             ))}
           </div>
         </div>
-
-        {/* Pill mode toggle — shown as fallback when active profile is default */}
-        {activeProfile === "default" && (
-        <div>
-          <div className="text-[10px] uppercase tracking-widest text-[#555] mb-2">Output Mode</div>
-          <div className="flex rounded-md border border-[#2a2a2a] overflow-hidden text-xs">
-            {(["professional", "chatbot"] as Mode[]).map((m) => (
-              <button
-                key={m}
-                onClick={() => setMode(m)}
-                className={`flex-1 py-1.5 capitalize transition-colors ${
-                  mode === m
-                    ? "bg-[#1a3040] text-[#00ccaa] border-b border-b-[#00ccaa]"
-                    : "bg-[#1a1a1a] text-[#555] hover:text-[#888]"
-                }`}
-              >
-                {m}
-              </button>
-            ))}
-          </div>
-        </div>
-        )}
 
         {threshold !== null && (
           <div className="text-[10px] text-[#444] mt-auto font-mono">
@@ -533,50 +543,178 @@ export function ChatView() {
           </button>
         </div>
 
-        {/* Retrieval panel */}
-        {retrieval.length > 0 && (
+        {/* Inspection panel — guards + rerank + critique + retrieval */}
+        {(retrieval.length > 0 || guards.length > 0 || rerank || critique) && (
           <div className="border-t border-[#00ccaa]/10 bg-[#141414]">
             <button
               onClick={() => setShowRetrieval((v) => !v)}
               className="w-full flex items-center justify-between px-4 py-2 text-[#444] hover:text-[#00ccaa]/60 hover:bg-[#0d1a1f] transition-colors text-xs font-mono"
             >
-              <span>Retrieval · {retrieval.length} chunks</span>
+              <span className="flex items-center gap-3">
+                {guards.length > 0 && (
+                  <span>
+                    Guards ·{" "}
+                    {(() => {
+                      const passN = guards.filter((g) => g.status === "pass").length;
+                      const blockN = guards.filter((g) => g.status === "block").length;
+                      const skipN = guards.filter((g) => g.status === "skip").length;
+                      const parts = [`${passN}✓`];
+                      if (blockN > 0) parts.push(`${blockN}⊘`);
+                      if (skipN > 0) parts.push(`${skipN}–`);
+                      return parts.join(" ");
+                    })()}
+                  </span>
+                )}
+                {rerank && (
+                  <span>
+                    Rerank · {rerank.kept}/{rerank.total} kept
+                  </span>
+                )}
+                {critique && (
+                  <span>
+                    Critic ·{" "}
+                    {critique.verdict === "skip"
+                      ? "–"
+                      : critique.verdict === "pass"
+                      ? "✓"
+                      : "⊘"}
+                  </span>
+                )}
+                {retrieval.length > 0 && <span>Retrieval · {retrieval.length} chunks</span>}
+              </span>
               {showRetrieval ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
             </button>
             {showRetrieval && (
-              <div className="px-4 pb-4 max-h-52 overflow-y-auto">
-                <table className="w-full text-[11px] font-mono">
-                  <thead className="text-[#444]">
-                    <tr className="border-b border-[#1a3540]">
-                      <th className="text-left py-1 pr-2">#</th>
-                      <th className="text-left py-1 pr-2">Source</th>
-                      <th className="text-right py-1 pr-2">Score</th>
-                      <th className="text-right py-1 pr-2">Dist</th>
-                      <th className="text-center py-1 pr-2">Pass</th>
-                      <th className="text-left py-1">Chunk</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {retrieval.map((r, i) => (
-                      <tr key={i} className="border-b border-[#0d1a1f]">
-                        <td className="py-1 pr-2 text-[#444]">{i + 1}</td>
-                        <td className="py-1 pr-2 text-[#00ccaa]/60">{r.source}</td>
-                        <td className="py-1 pr-2 text-right text-[#888]">{r.score}</td>
-                        <td className="py-1 pr-2 text-right text-[#444]">{r.distance}</td>
-                        <td className="py-1 pr-2 text-center">
-                          {r.passed ? (
-                            <span className="text-[#00ccaa]">Y</span>
-                          ) : (
-                            <span className="text-[#444]">N</span>
-                          )}
-                        </td>
-                        <td className="py-1 text-[#555] truncate max-w-[300px]">
-                          {r.preview.slice(0, 80)}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+              <div className="px-4 pb-4 max-h-72 overflow-y-auto space-y-4">
+                {guards.length > 0 && (
+                  <div>
+                    <div className="text-[10px] uppercase tracking-widest text-[#555] mb-1.5">
+                      Guards
+                    </div>
+                    <div className="text-[11px] font-mono space-y-0.5">
+                      {guards.map((g, i) => {
+                        const symbol =
+                          g.status === "pass" ? "✓" : g.status === "block" ? "⊘" : "–";
+                        const statusColor =
+                          g.status === "block"
+                            ? "text-[#f0a040]"
+                            : g.status === "skip"
+                            ? "text-[#555]"
+                            : "text-[#00ccaa]/80";
+                        return (
+                          <div key={i} className="flex items-baseline gap-2">
+                            <span className={`w-3 ${statusColor}`}>{symbol}</span>
+                            <span className="w-24 text-[#888]">{g.name}</span>
+                            <span className={`uppercase tracking-wider ${statusColor}`}>
+                              {g.status}
+                            </span>
+                            {g.detail && (
+                              <span className="text-[#555]">— {g.detail}</span>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+                {rerank && (
+                  <div>
+                    <div className="text-[10px] uppercase tracking-widest text-[#555] mb-1.5">
+                      Rerank · {rerank.kept}/{rerank.total} kept
+                    </div>
+                    <div className="text-[11px] font-mono space-y-0.5">
+                      {rerank.verdicts.map((v) => {
+                        const symbol = v.keep ? "✓" : "⊘";
+                        const color = v.keep ? "text-[#00ccaa]/80" : "text-[#f0a040]";
+                        return (
+                          <div key={v.i} className="flex items-baseline gap-2">
+                            <span className={`w-3 ${color}`}>{symbol}</span>
+                            <span className="w-6 text-[#444]">#{v.i + 1}</span>
+                            <span className="w-44 text-[#00ccaa]/60 truncate">{v.source}</span>
+                            <span className="w-12 text-right text-[#555]">{v.score.toFixed(2)}</span>
+                            <span className="text-[#555] flex-1 truncate">— {v.reason}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+                {critique && (
+                  <div>
+                    <div className="text-[10px] uppercase tracking-widest text-[#555] mb-1.5">
+                      Critic{critique.grounded ? " · grounded" : ""}
+                    </div>
+                    <div className="text-[11px] font-mono">
+                      {(() => {
+                        const symbol =
+                          critique.verdict === "pass"
+                            ? "✓"
+                            : critique.verdict === "skip"
+                            ? "–"
+                            : "⊘";
+                        const statusColor =
+                          critique.verdict === "pass"
+                            ? "text-[#00ccaa]/80"
+                            : critique.verdict === "skip"
+                            ? "text-[#555]"
+                            : "text-[#f0a040]";
+                        return (
+                          <div className="flex items-baseline gap-2">
+                            <span className={`w-3 ${statusColor}`}>{symbol}</span>
+                            <span className={`w-24 uppercase tracking-wider ${statusColor}`}>
+                              {critique.verdict || "—"}
+                            </span>
+                            {critique.reason && (
+                              <span className="text-[#555] flex-1">{critique.reason}</span>
+                            )}
+                            {critique.revised && (
+                              <span className="text-[#a070d0] uppercase text-[10px]">revised</span>
+                            )}
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  </div>
+                )}
+                {retrieval.length > 0 && (
+                  <div>
+                    <div className="text-[10px] uppercase tracking-widest text-[#555] mb-1.5">
+                      Retrieval
+                    </div>
+                    <table className="w-full text-[11px] font-mono">
+                      <thead className="text-[#444]">
+                        <tr className="border-b border-[#1a3540]">
+                          <th className="text-left py-1 pr-2">#</th>
+                          <th className="text-left py-1 pr-2">Source</th>
+                          <th className="text-right py-1 pr-2">Score</th>
+                          <th className="text-right py-1 pr-2">Dist</th>
+                          <th className="text-center py-1 pr-2">Pass</th>
+                          <th className="text-left py-1">Chunk</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {retrieval.map((r, i) => (
+                          <tr key={i} className="border-b border-[#0d1a1f]">
+                            <td className="py-1 pr-2 text-[#444]">{i + 1}</td>
+                            <td className="py-1 pr-2 text-[#00ccaa]/60">{r.source}</td>
+                            <td className="py-1 pr-2 text-right text-[#888]">{r.score}</td>
+                            <td className="py-1 pr-2 text-right text-[#444]">{r.distance}</td>
+                            <td className="py-1 pr-2 text-center">
+                              {r.passed ? (
+                                <span className="text-[#00ccaa]">Y</span>
+                              ) : (
+                                <span className="text-[#444]">N</span>
+                              )}
+                            </td>
+                            <td className="py-1 text-[#555] truncate max-w-[300px]">
+                              {r.preview.slice(0, 80)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </div>
             )}
           </div>

@@ -20,7 +20,7 @@ import { NodeConfigPanel } from "./NodeConfigPanel";
 import { ExecutionBar } from "./ExecutionBar";
 import { RobotAvatar } from "./RobotAvatar";
 import { useExecution } from "../hooks/useExecution";
-import { NODE_DEF_MAP, NODE_DEFINITIONS } from "../data/nodeDefinitions";
+import { useNodeTypes } from "../hooks/useNodeTypes";
 import {
   parseChatbotOutput,
   emotionToAvatarState,
@@ -41,7 +41,7 @@ function nextNodeId() {
 }
 
 function createNodeFromDef(typeDef: NodeTypeDef, position: { x: number; y: number }): FlowNode {
-  const defaultParams: Record<string, string | number> = {};
+  const defaultParams: Record<string, string | number | boolean> = {};
   typeDef.params.forEach((p) => {
     defaultParams[p.name] = p.default;
   });
@@ -63,92 +63,64 @@ function createNodeFromDef(typeDef: NodeTypeDef, position: { x: number; y: numbe
   };
 }
 
-// ── Default Pipeline ──────────────────────────────────────────
+// ── Server-default graph materialization ──────────────────────
+//
+// Single source of truth for the default pipeline lives on the server
+// (`GET /api/default-graph`). The editor fetches it on mount, the chat
+// path uses the same builder. No more "editor default vs chat default"
+// drift.
 
-function buildDefaultPipeline(): { nodes: FlowNode[]; edges: FlowEdge[] } {
-  const GAP_X = 280;
-  const ROW_Y_INGEST = 80;
-  const ROW_Y_QUERY = 340;
+type SerializedGraphNode = {
+  id: string;
+  type: string;
+  position: { x: number; y: number };
+  params: Record<string, string | number | boolean>;
+};
+type SerializedGraphEdge = {
+  source: string;
+  target: string;
+  sourceHandle: string;
+  targetHandle: string;
+};
+type SerializedGraph = { nodes: SerializedGraphNode[]; edges: SerializedGraphEdge[] };
 
-  const defs: Record<string, NodeTypeDef> = {};
-  NODE_DEFINITIONS.forEach((d) => { defs[d.typeId] = d; });
+function materializeServerGraph(
+  g: SerializedGraph,
+  byTypeId: Record<string, NodeTypeDef>,
+): { nodes: FlowNode[]; edges: FlowEdge[] } {
+  const nodes: FlowNode[] = g.nodes
+    .map((sn) => {
+      const def = byTypeId[sn.type];
+      if (!def) return null;
+      return {
+        id: sn.id,
+        type: "editable",
+        position: sn.position,
+        data: {
+          typeId: def.typeId,
+          label: def.label,
+          labelEn: def.labelEn,
+          inputs: def.inputs,
+          outputs: def.outputs,
+          params: { ...sn.params },
+          status: "idle",
+          preview: "",
+        },
+      } as FlowNode;
+    })
+    .filter((n): n is FlowNode => n !== null);
 
-  // Ingest row: Loader → Chunker → Embedder → VectorStore
-  const loader   = createNodeFromDef(defs["loader"],      { x: 0,          y: ROW_Y_INGEST });
-  const chunker  = createNodeFromDef(defs["chunker"],     { x: GAP_X,      y: ROW_Y_INGEST });
-  const embedder = createNodeFromDef(defs["embedder"],    { x: GAP_X * 2,  y: ROW_Y_INGEST });
-  const vstore   = createNodeFromDef(defs["vectorstore"], { x: GAP_X * 3,  y: ROW_Y_INGEST });
-
-  // Query row: QueryInput → Guardrail → Retriever → PromptBuilder → Generator → OutputCritic → ResultDisplay
-  // QueryInput is 360px wide (inline question editor), so guardrail starts further right
-  // to maintain a similar visual gap as the rest of the row.
-  const QUERY_OFFSET = 420;
-  const qinput    = createNodeFromDef(defs["query_input"],    { x: 0,                       y: ROW_Y_QUERY });
-  const guardrail = createNodeFromDef(defs["guardrail"],      { x: QUERY_OFFSET,            y: ROW_Y_QUERY });
-  const retriever = createNodeFromDef(defs["retriever"],      { x: QUERY_OFFSET + GAP_X,    y: ROW_Y_QUERY });
-  const scopegate = createNodeFromDef(defs["scope_gate"],     { x: QUERY_OFFSET + GAP_X * 2, y: ROW_Y_QUERY });
-  const pbuilder  = createNodeFromDef(defs["prompt_builder"], { x: QUERY_OFFSET + GAP_X * 3, y: ROW_Y_QUERY });
-  const generator = createNodeFromDef(defs["generator"],      { x: QUERY_OFFSET + GAP_X * 4, y: ROW_Y_QUERY });
-  const critic    = createNodeFromDef(defs["output_critic"],  { x: QUERY_OFFSET + GAP_X * 5, y: ROW_Y_QUERY });
-  const display   = createNodeFromDef(defs["result_display"], { x: QUERY_OFFSET + GAP_X * 6, y: ROW_Y_QUERY });
-
-  // System Prompt — below Generator, connects directly to it
-  const sysprompt = createNodeFromDef(defs["system_prompt"],  { x: QUERY_OFFSET + GAP_X * 4, y: ROW_Y_QUERY + 200 });
-
-  // Reference Loader — below PromptBuilder, always-on product reference
-  const refloader = createNodeFromDef(defs["reference_loader"], { x: QUERY_OFFSET + GAP_X * 3, y: ROW_Y_QUERY + 200 });
-
-  // Product Selector — below Retriever; default mode='rule' (string match against
-  // collection metadata, zero LLM latency). Both collection and reference_data
-  // are pre-wired so the user can flip mode to 'llm' with no re-wiring.
-  const pselector = createNodeFromDef(defs["product_selector"], { x: QUERY_OFFSET + GAP_X, y: ROW_Y_QUERY + 200 });
-
-  const nodes = [loader, chunker, embedder, vstore, qinput, guardrail, retriever, scopegate, pbuilder, generator, critic, display, sysprompt, refloader, pselector];
-
-  const edgeStyle = { strokeWidth: 2, stroke: "#e07830" };
-  const sysEdgeStyle = { strokeWidth: 2, stroke: "#70b0d0" };
-  const guardEdgeStyle = { strokeWidth: 2, stroke: "#f0a040" };
-  const criticEdgeStyle = { strokeWidth: 2, stroke: "#a070d0" };
-  const refEdgeStyle = { strokeWidth: 2, stroke: "#60c080" };
-  const selectorEdgeStyle = { strokeWidth: 2, stroke: "#d0a060" };
-  // Cyan = scope gate (semantic-relevance threshold). Distinct from amber
-  // brand-keyword guardrail so the two safety layers read at a glance.
-  const scopeEdgeStyle = { strokeWidth: 2, stroke: "#40b0c0" };
-  const edges: FlowEdge[] = [
-    // Ingest chain
-    { id: `e-${loader.id}-${chunker.id}`,   source: loader.id,   target: chunker.id,   sourceHandle: "documents",  targetHandle: "documents",  animated: true, style: edgeStyle },
-    { id: `e-${chunker.id}-${embedder.id}`, source: chunker.id,  target: embedder.id,  sourceHandle: "chunks",     targetHandle: "chunks",     animated: true, style: edgeStyle },
-    { id: `e-${chunker.id}-${vstore.id}`,   source: chunker.id,  target: vstore.id,    sourceHandle: "chunks",     targetHandle: "chunks",     animated: true, style: edgeStyle },
-    { id: `e-${embedder.id}-${vstore.id}`,  source: embedder.id, target: vstore.id,    sourceHandle: "embeddings", targetHandle: "embeddings", animated: true, style: edgeStyle },
-    // Query chain — query flows through guardrail first, retrieval through scope gate
-    { id: `e-${qinput.id}-${guardrail.id}`,    source: qinput.id,    target: guardrail.id, sourceHandle: "query",      targetHandle: "query_in",   animated: true, style: guardEdgeStyle },
-    { id: `e-${guardrail.id}-${retriever.id}`, source: guardrail.id, target: retriever.id, sourceHandle: "query_out",  targetHandle: "query",      animated: true, style: edgeStyle },
-    { id: `e-${vstore.id}-${retriever.id}`,    source: vstore.id,    target: retriever.id, sourceHandle: "collection", targetHandle: "collection", animated: true, style: edgeStyle },
-    // Scope Gate (cyan): retriever results + query in, results pass-through (or block)
-    { id: `e-${retriever.id}-${scopegate.id}`, source: retriever.id, target: scopegate.id, sourceHandle: "results",    targetHandle: "results_in", animated: true, style: scopeEdgeStyle },
-    { id: `e-${guardrail.id}-${scopegate.id}`, source: guardrail.id, target: scopegate.id, sourceHandle: "query_out",  targetHandle: "query",      animated: true, style: scopeEdgeStyle },
-    { id: `e-${guardrail.id}-${pbuilder.id}`,  source: guardrail.id, target: pbuilder.id,  sourceHandle: "query_out",  targetHandle: "query",      animated: true, style: edgeStyle },
-    { id: `e-${scopegate.id}-${pbuilder.id}`,  source: scopegate.id, target: pbuilder.id,  sourceHandle: "results_out", targetHandle: "results",    animated: true, style: edgeStyle },
-    { id: `e-${pbuilder.id}-${generator.id}`,  source: pbuilder.id,  target: generator.id, sourceHandle: "prompt",     targetHandle: "prompt",     animated: true, style: edgeStyle },
-    // Generator → OutputCritic → ResultDisplay (purple edges = self-critique loop)
-    { id: `e-${generator.id}-${critic.id}`,    source: generator.id, target: critic.id,    sourceHandle: "answer",     targetHandle: "answer_in",  animated: true, style: criticEdgeStyle },
-    { id: `e-${critic.id}-${display.id}`,      source: critic.id,    target: display.id,   sourceHandle: "answer_out", targetHandle: "answer",     animated: true, style: criticEdgeStyle },
-    // System Prompt → Generator (light blue to distinguish): persona text + format hint
-    { id: `e-${sysprompt.id}-${generator.id}`,     source: sysprompt.id, target: generator.id, sourceHandle: "system_prompt", targetHandle: "system_prompt", animated: true, style: sysEdgeStyle },
-    { id: `e-${sysprompt.id}-${generator.id}-fmt`, source: sysprompt.id, target: generator.id, sourceHandle: "format_hint",   targetHandle: "format_hint",   animated: true, style: sysEdgeStyle },
-    // Reference Loader → PromptBuilder (green = always-on product reference)
-    { id: `e-${refloader.id}-${pbuilder.id}`, source: refloader.id, target: pbuilder.id, sourceHandle: "reference_data", targetHandle: "reference_data", animated: true, style: refEdgeStyle },
-    // Product Selector wiring (tan): query + collection + reference_data into selector, product_id out into retriever
-    { id: `e-${guardrail.id}-${pselector.id}`,  source: guardrail.id, target: pselector.id, sourceHandle: "query_out",      targetHandle: "query",          animated: true, style: selectorEdgeStyle },
-    { id: `e-${vstore.id}-${pselector.id}`,     source: vstore.id,    target: pselector.id, sourceHandle: "collection",     targetHandle: "collection",     animated: true, style: selectorEdgeStyle },
-    { id: `e-${refloader.id}-${pselector.id}`,  source: refloader.id, target: pselector.id, sourceHandle: "reference_data", targetHandle: "reference_data", animated: true, style: selectorEdgeStyle },
-    { id: `e-${pselector.id}-${retriever.id}`,  source: pselector.id, target: retriever.id, sourceHandle: "product_id",     targetHandle: "product_id",     animated: true, style: selectorEdgeStyle },
-  ];
+  const edges: FlowEdge[] = g.edges.map((se, i) => ({
+    id: `e-${se.source}-${se.target}-${i}`,
+    source: se.source,
+    target: se.target,
+    sourceHandle: se.sourceHandle,
+    targetHandle: se.targetHandle,
+    animated: true,
+  }));
 
   return { nodes, edges };
 }
-
-const DEFAULT_PIPELINE = buildDefaultPipeline();
 
 /** 檢查連線的 port 型別是否相容 */
 function isConnectionValid(
@@ -171,10 +143,11 @@ function isConnectionValid(
 }
 
 export function FlowEditor() {
+  // Canvas starts empty; populated from /api/default-graph below.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const [nodes, setNodes, onNodesChange] = useNodesState<any>(DEFAULT_PIPELINE.nodes);
+  const [nodes, setNodes, onNodesChange] = useNodesState<any>([]);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const [edges, setEdges, onEdgesChange] = useEdgesState<any>(DEFAULT_PIPELINE.edges);
+  const [edges, setEdges, onEdgesChange] = useEdgesState<any>([]);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -182,6 +155,29 @@ export function FlowEditor() {
   const draggedTypeRef = useRef<NodeTypeDef | null>(null);
 
   const { isRunning, nodeStatuses, execute, cancel } = useExecution();
+  const { byTypeId, loading: nodeTypesLoading } = useNodeTypes();
+
+  // Fetch the server-side default graph on mount — single source of truth
+  // shared with the chat path. Waits for node-types to load first so the
+  // materializer can resolve labels / ports / params for each node.
+  useEffect(() => {
+    if (nodeTypesLoading) return;
+    let cancelled = false;
+    fetch("/api/default-graph")
+      .then((r) => r.json())
+      .then((g: SerializedGraph) => {
+        if (cancelled) return;
+        const materialized = materializeServerGraph(g, byTypeId);
+        setNodes(materialized.nodes);
+        setEdges(materialized.edges);
+      })
+      .catch((e) => console.error("[FlowEditor] default graph fetch failed:", e));
+    return () => {
+      cancelled = true;
+    };
+    // Re-run if byTypeId reference changes (i.e., node-types finish loading)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [nodeTypesLoading]);
 
   // 同步 nodeStatuses 到 nodes 的 data
   useEffect(() => {
@@ -219,7 +215,7 @@ export function FlowEditor() {
       event.preventDefault();
 
       const typeId = event.dataTransfer.getData("application/rag-node-type");
-      const typeDef = NODE_DEF_MAP[typeId];
+      const typeDef = byTypeId[typeId];
       if (!typeDef || !rfInstance || !reactFlowWrapper.current) return;
 
       const bounds = reactFlowWrapper.current.getBoundingClientRect();
@@ -231,7 +227,7 @@ export function FlowEditor() {
       const newNode = createNodeFromDef(typeDef, position);
       setNodes((nds) => [...nds, newNode]);
     },
-    [rfInstance, setNodes]
+    [rfInstance, setNodes, byTypeId]
   );
 
   // ── Connections ─────────────────────────────────────────────
@@ -302,7 +298,7 @@ export function FlowEditor() {
   // ── Param Change ────────────────────────────────────────────
 
   const onParamChange = useCallback(
-    (nodeId: string, paramName: string, value: string | number) => {
+    (nodeId: string, paramName: string, value: string | number | boolean) => {
       setNodes((nds) =>
         nds.map((n) =>
           n.id === nodeId
@@ -339,7 +335,9 @@ export function FlowEditor() {
     setSelectedNodeId(null);
   }, [setNodes, setEdges]);
 
-  const [savedProfiles, setSavedProfiles] = useState<Record<string, { preset: string; custom_text: string }>>({});
+  // Profile state: each profile carries the full {nodes, edges} so chat and
+  // editor see the same setup. Same shape as /api/default-graph.
+  const [savedProfiles, setSavedProfiles] = useState<Record<string, { graph?: SerializedGraph }>>({});
 
   useEffect(() => {
     fetch("/api/profiles")
@@ -349,38 +347,35 @@ export function FlowEditor() {
   }, []);
 
   const handleSaveProfile = useCallback(async (name: string) => {
-    const sysNode = nodes.find((n) => n.data.typeId === "system_prompt");
-    const preset = String(sysNode?.data.params.preset ?? "professional");
-    const custom_text = String(sysNode?.data.params.text ?? "");
+    const graph: SerializedGraph = {
+      nodes: nodes.map((n) => ({
+        id: n.id,
+        type: n.data.typeId,
+        position: n.position,
+        params: n.data.params,
+      })),
+      edges: edges.map((e) => ({
+        source: e.source,
+        target: e.target,
+        sourceHandle: e.sourceHandle ?? "",
+        targetHandle: e.targetHandle ?? "",
+      })),
+    };
     await fetch("/api/profiles", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, preset, custom_text }),
+      body: JSON.stringify({ name, graph }),
     });
-    setSavedProfiles((prev) => ({ ...prev, [name]: { preset, custom_text } }));
-  }, [nodes]);
+    setSavedProfiles((prev) => ({ ...prev, [name]: { graph } }));
+  }, [nodes, edges]);
 
   const handleLoadProfile = useCallback((name: string) => {
-    const profile = savedProfiles[name];
-    if (!profile) return;
-    setNodes((nds) =>
-      nds.map((n) =>
-        n.data.typeId === "system_prompt"
-          ? {
-              ...n,
-              data: {
-                ...n.data,
-                params: {
-                  ...n.data.params,
-                  preset: profile.preset,
-                  text: profile.custom_text,
-                },
-              },
-            }
-          : n
-      )
-    );
-  }, [savedProfiles, setNodes]);
+    const graph = savedProfiles[name]?.graph;
+    if (!graph) return;
+    const { nodes: restoredNodes, edges: restoredEdges } = materializeServerGraph(graph, byTypeId);
+    setNodes(restoredNodes);
+    setEdges(restoredEdges);
+  }, [savedProfiles, setNodes, setEdges, byTypeId]);
 
   // ── Selected node data ──────────────────────────────────────
 
