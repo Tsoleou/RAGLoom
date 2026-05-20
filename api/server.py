@@ -521,10 +521,26 @@ def chat_query(req: ChatQueryRequest):
     settings = chat_pipe.config
     overrides = _build_chat_overrides(nodes, settings)
 
+    # Multi-turn memory: the graph engine is stateless, so the chat endpoint
+    # owns conversation history. Feed prior turns into the generator node and
+    # write the updated history back after the turn. History lives on the
+    # chat_pipe singleton and is cleared by /api/chat/reset.
+    gen_id = next((n["id"] for n in nodes if n.get("type") == "generator"), None)
+    if gen_id is not None:
+        overrides.setdefault(gen_id, {})["messages"] = chat_pipe._messages
+
     try:
         results, outputs = execute_graph(nodes, edges, input_overrides=overrides, return_outputs=True)
     except Exception as e:
         return {"status": "error", "message": str(e)}
+
+    # Persist updated history only when the generator actually ran. A guard
+    # short-circuit leaves history untouched, so refusals never pollute it —
+    # same behavior as the old pipeline.query() path.
+    if gen_id is not None:
+        gen_answer = (outputs.get(gen_id) or {}).get("answer")
+        if gen_answer is not None and hasattr(gen_answer, "messages"):
+            chat_pipe._messages = gen_answer.messages
 
     return _extract_chat_response(nodes, results, outputs, settings)
 

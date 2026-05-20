@@ -500,7 +500,10 @@ def execute_generator(inputs: dict, params: dict) -> dict:
         prompt=final_prompt,
         model=model,
         format_type=format_type,
-        messages=[],
+        # Multi-turn history arrives via input_overrides when the caller
+        # supplies it — the chat path injects conversation history; the
+        # editor path injects nothing and stays single-shot.
+        messages=inputs.get("messages") or [],
         base_url=settings.ollama_base_url,
     )
 
