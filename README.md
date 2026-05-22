@@ -8,9 +8,9 @@ Built with Python, FastAPI, React, ChromaDB, and Ollama. No LangChain.
 
 ## Features
 
-- **Visual node editor** — drag-and-drop pipeline building with real-time per-node execution status pushed over WebSocket. Fifteen node types covering the full ingest and query path.
+- **Visual node editor** — drag-and-drop pipeline building with real-time per-node execution status pushed over WebSocket. Seventeen node types covering the full ingest and query path.
 - **Safety Guardrail** — keyword-based pre-retrieval filter that blocks queries matching a configurable block list (e.g. competitor brand names) before they ever reach the LLM. In the node view, blocked queries short-circuit downstream nodes with an amber status ring.
-- **ScopeGate** — semantic-relevance check that compares the query embedding to on/off-topic anchor phrases living outside the knowledge base. Off-topic queries (pets, recipes, weather, etc.) short-circuit with a canned refusal — no LLM call, no fabricated catalog. Robust to bridge attacks like "is the dog like a laptop?" where retrieval scores alone can't distinguish on- vs off-topic.
+- **ScopeGate** — semantic-relevance check that compares the query embedding to on/off-topic anchor phrases living outside the knowledge base. Off-topic queries (pets, recipes, finance, etc.) short-circuit with a canned refusal — no LLM call, no fabricated catalog. Robust to bridge attacks like "is the dog like a laptop?" where retrieval scores alone can't distinguish on- vs off-topic.
 - **PriceGuard** — pre-retrieval pattern match for price-intent queries (`price`, `cost`, `MSRP`, `how much`, `售價`, `多少錢`, etc.) that short-circuits to a canned bilingual refusal. Mirrors `Guardrail` and `ScopeGate`: at small-model scale, "trust the model to follow instructions" is unreliable for high-stakes refusals — the policy is enforced in code instead.
 - **OutputCritic** — an optional second LLM pass that audits the generator's answer against a negative-rules list. `audit` mode labels violations; `revise` mode rewrites the offending answer.
 - **Persona presets** — the `SystemPrompt` node ships with `professional` and `chatbot` presets (plus free-form custom text), both tuned to a trade-show promoter register (2–4 sentences, lead with the hook). The `chatbot` preset emits structured JSON `{reply, emotion}` enforced by Ollama grammar-constrained decoding, which the UI smart-renders as an emotion badge plus a reply bubble with an animated avatar. Replies are always in the visitor's language.
@@ -28,14 +28,17 @@ Ingest:  Document → Loader → Chunker → Embedder → VectorStore (ChromaDB)
 
 Query:   Question
             │
-   Guardrail (API layer, brand keywords) ─ hit ─► canned refusal
+   Guardrail (brand keywords) ─ hit ─► canned refusal
             │
             ▼
-   PriceGuard (pipeline step 0, price intent) ─ hit ─► canned refusal
+   PriceGuard (price intent) ─ hit ─► canned refusal
             │
             ▼
    ProductSelector ─ product_id ─► Retriever
    (rule | llm)                       │
+                                      ▼
+                            RetrievalJudge (LLM rerank — drop off-target chunks)
+                                      │
                                       ▼
                             ScopeGate (semantic off-topic) ─ hit ─► canned refusal
                                       │
@@ -57,9 +60,10 @@ Three pre-LLM guards — `Guardrail`, `PriceGuard`, `ScopeGate` — short-circui
 | `core/embedder.py` | Generates embeddings via Ollama API |
 | `core/vector_store.py` | ChromaDB persistent storage and retrieval |
 | `core/retriever.py` | Semantic search with keyword boosting |
+| `core/retrieval_judge.py` | LLM-as-judge rerank — drops retrieved chunks that don't actually answer the query (catches polarity/negation misses pure cosine retrieval can't); one batched LLM call per query, degrades to keep-all on judge error |
 | `core/guardrail.py` | Keyword-based query filter with word-boundary matching |
 | `core/scope_gate.py` | Semantic on/off-topic check via anchor embeddings (default mode) or retrieval-score threshold |
-| `core/price_guard.py` | Regex-based price-intent detector + canned bilingual refusal; short-circuits at step 0 of `pipeline.query()` |
+| `core/price_guard.py` | Regex-based price-intent detector + canned bilingual refusal; short-circuits before retrieval |
 | `core/prompt_builder.py` | Context assembly (RAG results + glossary + vision) |
 | `core/personas.py` | Persona presets (professional / chatbot / custom) |
 | `core/generator.py` | Calls Ollama LLM for answer generation |
@@ -75,7 +79,7 @@ Three pre-LLM guards — `Guardrail`, `PriceGuard`, `ScopeGate` — short-circui
 
 ![Chat UI](doc/images/Chatview.png)
 
-**Node Editor** — for builders and operators. Drag-and-drop pipeline editor with fifteen node types including `Guardrail`, `ScopeGate`, `SystemPrompt`, `OutputCritic`, `ReferenceLoader`, and `ProductSelector`. Real-time per-node execution status over WebSocket. The `ResultDisplay` node smart-renders chatbot JSON into an emotion badge plus reply text. A **Load Default** button restores the default pipeline at any time.
+**Node Editor** — for builders and operators. Drag-and-drop pipeline editor with seventeen node types including `Guardrail`, `ScopeGate`, `RetrievalJudge`, `SystemPrompt`, `OutputCritic`, `ReferenceLoader`, and `ProductSelector`. Real-time per-node execution status over WebSocket. The `ResultDisplay` node smart-renders chatbot JSON into an emotion badge plus reply text. A **Load Default** button restores the default pipeline at any time.
 
 ![Node Editor](doc/images/Editorview.png)
 
