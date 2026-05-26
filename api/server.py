@@ -10,6 +10,7 @@ FastAPI Server。
 
 import asyncio
 import json
+import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -18,7 +19,17 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 # ── Profile storage ────────────────────────────────────────────────
-_PROFILES_PATH = Path("config/chat_profiles.json")
+#
+# Layout (per-file):
+#   config/profiles/<name>.json   ← user-created profiles, content = {nodes, edges}
+#   config/profiles/_active.txt   ← active profile name (1 line)
+#
+# The 'default' profile lives in code (_default_chat_graph) — no file.
+# Legacy single-file config/chat_profiles.json is migrated on first load.
+_PROFILES_DIR = Path("config/profiles")
+_ACTIVE_PATH = _PROFILES_DIR / "_active.txt"
+_LEGACY_PROFILES_PATH = Path("config/chat_profiles.json")
+_DEFAULT_NAME = "default"
 
 
 def _default_chat_graph() -> dict:
@@ -156,34 +167,130 @@ def _ensure_graph(profile: dict) -> dict:
         return profile
     patched = dict(profile)
     patched["graph"] = _default_chat_graph()
-    # Drop legacy persona-only fields once the graph carries them
     patched.pop("preset", None)
     patched.pop("custom_text", None)
     return patched
 
 
-_DEFAULT_PROFILES = {
-    "active": "default",
-    "profiles": {"default": {"graph": _default_chat_graph()}},
-}
+def _atomic_write_text(path: Path, text: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(text)
+    os.replace(tmp, path)
+
+
+def _is_safe_profile_name(name: str) -> bool:
+    if not isinstance(name, str) or not name:
+        return False
+    if "/" in name or "\\" in name or ".." in name:
+        return False
+    if name.startswith(".") or name.startswith("_"):
+        return False
+    return True
+
+
+def _profile_path(name: str) -> Path:
+    return _PROFILES_DIR / f"{name}.json"
+
+
+def _list_user_profile_names() -> list[str]:
+    if not _PROFILES_DIR.exists():
+        return []
+    names = []
+    for p in sorted(_PROFILES_DIR.glob("*.json")):
+        stem = p.stem
+        if stem.startswith("_") or stem.startswith("."):
+            continue
+        names.append(stem)
+    return names
+
+
+def _read_active_name() -> str:
+    if _ACTIVE_PATH.exists():
+        name = _ACTIVE_PATH.read_text().strip()
+        if name:
+            return name
+    return _DEFAULT_NAME
+
+
+def _write_active_name(name: str) -> None:
+    _atomic_write_text(_ACTIVE_PATH, name + "\n")
+
+
+def _read_user_profile_graph(name: str) -> dict | None:
+    path = _profile_path(name)
+    if not path.exists():
+        return None
+    try:
+        graph = json.loads(path.read_text())
+    except Exception as e:
+        print(f"[Server] Skipping malformed profile {path.name}: {e}")
+        return None
+    return graph if isinstance(graph, dict) and graph.get("nodes") else None
+
+
+def _write_user_profile_graph(name: str, graph: dict) -> None:
+    _atomic_write_text(_profile_path(name), json.dumps(graph, ensure_ascii=False, indent=2))
+
+
+def _delete_user_profile_file(name: str) -> bool:
+    path = _profile_path(name)
+    if not path.exists():
+        return False
+    path.unlink()
+    return True
+
+
+def _migrate_legacy_profiles_if_needed() -> None:
+    """One-shot: split old config/chat_profiles.json into per-file layout.
+    Idempotent — bails out if profiles/ already exists or legacy file is gone."""
+    if _PROFILES_DIR.exists():
+        return
+    if not _LEGACY_PROFILES_PATH.exists():
+        return
+    try:
+        data = json.loads(_LEGACY_PROFILES_PATH.read_text())
+    except Exception as e:
+        print(f"[Server] Legacy profile migration aborted ({e}); keeping {_LEGACY_PROFILES_PATH}")
+        return
+
+    _PROFILES_DIR.mkdir(parents=True, exist_ok=True)
+    profiles = data.get("profiles") or {}
+    migrated = 0
+    for name, profile in profiles.items():
+        if name == _DEFAULT_NAME:
+            continue  # default lives in code now
+        if not _is_safe_profile_name(name):
+            print(f"[Server] Skipping unsafe legacy profile name: {name!r}")
+            continue
+        patched = _ensure_graph(profile)
+        graph = patched.get("graph")
+        if not isinstance(graph, dict) or not graph.get("nodes"):
+            continue
+        _write_user_profile_graph(name, graph)
+        migrated += 1
+
+    active = data.get("active") or _DEFAULT_NAME
+    _write_active_name(active)
+
+    backup = _LEGACY_PROFILES_PATH.with_suffix(_LEGACY_PROFILES_PATH.suffix + ".bak")
+    os.replace(_LEGACY_PROFILES_PATH, backup)
+    print(f"[Server] Migrated {migrated} profile(s) to {_PROFILES_DIR}/; legacy file backed up at {backup}")
 
 
 def _load_profiles() -> dict:
-    if _PROFILES_PATH.exists():
-        data = json.loads(_PROFILES_PATH.read_text())
-        # Migrate legacy {preset, custom_text} profiles by auto-filling graph
-        profiles = data.get("profiles", {}) or {}
-        migrated = {name: _ensure_graph(prof) for name, prof in profiles.items()}
-        if migrated != profiles:
-            data["profiles"] = migrated
-            _save_profiles(data)
-        return data
-    return dict(_DEFAULT_PROFILES)
-
-
-def _save_profiles(data: dict) -> None:
-    _PROFILES_PATH.parent.mkdir(parents=True, exist_ok=True)
-    _PROFILES_PATH.write_text(json.dumps(data, ensure_ascii=False, indent=2))
+    """Assemble {active, profiles:{name:{graph}}} from per-file storage.
+    'default' is synthesized from _default_chat_graph()."""
+    _migrate_legacy_profiles_if_needed()
+    profiles = {_DEFAULT_NAME: {"graph": _default_chat_graph()}}
+    for name in _list_user_profile_names():
+        graph = _read_user_profile_graph(name)
+        if graph is not None:
+            profiles[name] = {"graph": graph}
+    active = _read_active_name()
+    if active not in profiles:
+        active = _DEFAULT_NAME
+    return {"active": active, "profiles": profiles}
 
 from api.node_registry import get_node_types_json
 from api.engine import execute_graph
@@ -552,36 +659,39 @@ def get_profiles():
 
 @app.post("/api/profiles")
 def save_profile(req: ChatProfileRequest):
-    """Create or overwrite a named profile with its full chat graph."""
+    """Create or overwrite a named user profile with its full chat graph."""
+    if req.name == _DEFAULT_NAME:
+        raise HTTPException(status_code=400, detail="'default' is reserved — choose another name.")
+    if not _is_safe_profile_name(req.name):
+        raise HTTPException(status_code=400, detail="Profile name must not be empty, start with '_' or '.', or contain '/', '\\\\', '..'.")
     if not isinstance(req.graph, dict) or not req.graph.get("nodes"):
         raise HTTPException(status_code=400, detail="Profile graph must include nodes.")
-    data = _load_profiles()
-    data["profiles"][req.name] = {"graph": req.graph}
-    _save_profiles(data)
+    _migrate_legacy_profiles_if_needed()
+    _write_user_profile_graph(req.name, req.graph)
     return {"status": "ok", "name": req.name}
 
 @app.post("/api/profiles/activate")
 def activate_profile(req: ActivateProfileRequest):
     """Set the active profile."""
-    data = _load_profiles()
-    if req.name not in data["profiles"]:
+    _migrate_legacy_profiles_if_needed()
+    available = _load_profiles()["profiles"]
+    if req.name not in available:
         raise HTTPException(status_code=404, detail=f"Profile '{req.name}' not found")
-    data["active"] = req.name
-    _save_profiles(data)
+    _write_active_name(req.name)
     return {"status": "ok", "active": req.name}
 
 @app.delete("/api/profiles/{name}")
 def delete_profile(name: str):
-    """Delete a profile (cannot delete 'default')."""
-    if name == "default":
+    """Delete a user profile (cannot delete 'default')."""
+    if name == _DEFAULT_NAME:
         raise HTTPException(status_code=400, detail="Cannot delete the default profile")
-    data = _load_profiles()
-    if name not in data["profiles"]:
+    if not _is_safe_profile_name(name):
+        raise HTTPException(status_code=400, detail="Invalid profile name")
+    _migrate_legacy_profiles_if_needed()
+    if not _delete_user_profile_file(name):
         raise HTTPException(status_code=404, detail=f"Profile '{name}' not found")
-    del data["profiles"][name]
-    if data["active"] == name:
-        data["active"] = "default"
-    _save_profiles(data)
+    if _read_active_name() == name:
+        _write_active_name(_DEFAULT_NAME)
     return {"status": "ok"}
 
 
