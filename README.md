@@ -8,7 +8,7 @@ Built with Python, FastAPI, React, ChromaDB, and Ollama. No LangChain.
 
 ## Features
 
-- **Visual node editor** — drag-and-drop pipeline building with real-time per-node execution status pushed over WebSocket. Seventeen node types covering the full ingest and query path.
+- **Visual node editor** — drag-and-drop pipeline building with real-time per-node execution status pushed over WebSocket. Twenty-three node types across **ingest**, **query**, and **eval** categories — seventeen for the chat pipeline plus six retrieval-quality eval nodes.
 - **Safety Guardrail** — keyword-based pre-retrieval filter that blocks queries matching a configurable block list (e.g. competitor brand names) before they ever reach the LLM. In the node view, blocked queries short-circuit downstream nodes with an amber status ring.
 - **ScopeGate** — semantic-relevance check that compares the query embedding to on/off-topic anchor phrases living outside the knowledge base. Off-topic queries (pets, recipes, finance, etc.) short-circuit with a canned refusal — no LLM call, no fabricated catalog. Robust to bridge attacks like "is the dog like a laptop?" where retrieval scores alone can't distinguish on- vs off-topic.
 - **PriceGuard** — pre-retrieval pattern match for price-intent queries (`price`, `cost`, `MSRP`, `how much`, `售價`, `多少錢`, etc.) that short-circuits to a canned bilingual refusal. Mirrors `Guardrail` and `ScopeGate`: at small-model scale, "trust the model to follow instructions" is unreliable for high-stakes refusals — the policy is enforced in code instead.
@@ -18,6 +18,7 @@ Built with Python, FastAPI, React, ChromaDB, and Ollama. No LangChain.
 - **Metadata-filtered retrieval** — product documents are tagged with a `product_id` at ingest time (derived from filename). The `Retriever` node accepts a filter parameter to scope retrieval to a single product. The `ProductSelector` node, included in the default pipeline, classifies query intent in one of two modes — `rule` (fast string matching against the collection's `product_id`s, zero LLM latency) or `llm` (small LLM pass for ambiguous phrasing) — and feeds the filter automatically. Comparison or unrecognized queries fall through to broad search.
 - **Inline editing** — the `QueryInput` node lets you type the question directly on the node; no config panel round-trip.
 - **Golden-set eval with LLM-as-judge** — `python -m eval.runner --llm-judge` runs a curated regression set through the pipeline and audits each answer with a second LLM call that returns explicit `hallucinated_claims` lists. Gates on the binary signal (claim list empty / non-empty) rather than noisy float scores so same-commit reruns don't flip pass/fail. See [Eval Harness](#eval-harness) below.
+- **Retrieval-quality eval inside the editor** — a dedicated `eval` node family (`EvalCaseLoader`, `CoverageMetric` (Hit@K), `ScoreDistributionMetric`, `DiversityMetric`, `FactsCoverageMetric`, `EvalReport`) and a **Run Batch** button that sweeps any graph across a selected scope of golden-set cases (all / by category / by id list) and renders macro averages, per-category breakdown, worst-K, and a per-case table. A ready-to-load `retrieval_eval` profile ships with the guard stack pre-wired, so you can drop in a graph variant and observe its retrieval behaviour without touching the chat path.
 
 ![Guardrail node — keyword-based block with amber match indicator](doc/images/KeywordGuardrail.png)
 
@@ -71,6 +72,7 @@ Three pre-LLM guards — `Guardrail`, `PriceGuard`, `ScopeGate` — short-circui
 | `core/product_selector.py` | LLM-based intent classifier that maps a query to a single `product_id` (or `NONE` for ambiguous/comparison queries) |
 | `core/product_matcher.py` | Rule-based intent classifier — word-boundary regex match (CJK-aware via `re.ASCII`) against `product_id`s. Used by the chat pipeline and the `ProductSelector` node's `rule` mode for zero-latency point-query routing. |
 | `core/pipeline.py` | Orchestrates `ingest()` and `query()` for the chat interface |
+| `core/eval_metrics.py` | Pure-compute helpers for the Editor eval nodes — coverage / score distribution / diversity / facts coverage / batch aggregation. Mirrors `eval/scorer.py` algorithms so node and CLI eval give matching numbers. |
 | `config/settings.py` | Dataclass-based config with `.env` override support |
 
 ## Interfaces
@@ -79,7 +81,7 @@ Three pre-LLM guards — `Guardrail`, `PriceGuard`, `ScopeGate` — short-circui
 
 ![Chat UI](doc/images/Chatview.png)
 
-**Node Editor** — for builders and operators. Drag-and-drop pipeline editor with seventeen node types including `Guardrail`, `ScopeGate`, `RetrievalJudge`, `SystemPrompt`, `OutputCritic`, `ReferenceLoader`, and `ProductSelector`. Real-time per-node execution status over WebSocket. The `ResultDisplay` node smart-renders chatbot JSON into an emotion badge plus reply text. A **Load Default** button restores the default pipeline at any time.
+**Node Editor** — for builders and operators. Drag-and-drop pipeline editor with twenty-three node types grouped into `ingest`, `query`, and `eval` categories — including `Guardrail`, `ScopeGate`, `RetrievalJudge`, `SystemPrompt`, `OutputCritic`, `ReferenceLoader`, `ProductSelector`, and the eval family (`EvalCaseLoader`, four metric nodes, `EvalReport`). Real-time per-node execution status over WebSocket. The `ResultDisplay` node smart-renders chatbot JSON into an emotion badge plus reply text. Profiles save/load full graphs, and a **Run Batch** button appears whenever the canvas contains an `EvalCaseLoader`, opening a scope selector + results modal that drives the [editor batch eval](#editor-batch-eval) endpoint.
 
 ![Node Editor](doc/images/Editorview.png)
 
@@ -172,6 +174,17 @@ The hallucination gate fires **only on the binary signal** — `passed = rule_pa
 
 Cases where the pipeline short-circuits (PriceGuard, ScopeGate, Guardrail) skip the judge — there is no retrieved context to audit a canned refusal against.
 
+### Editor batch eval
+
+The same golden set also drives an editor-side batch runner. Load the `retrieval_eval` profile (ships in `config/profiles/`), tweak the graph if you want — for example to A/B a different retriever `top_k`, swap chunking strategy, or insert/remove a guard — and click **Run Batch ▸**. A modal lets you pick scope (all / by category / explicit id list) and worst-K size, then sweeps the graph through each selected case and aggregates:
+
+- **Macro averages** per metric (`Coverage`, `Score Distribution`, `Diversity`, `Facts Coverage`), with `n` skipping cases where ground truth is N/A.
+- **Per-category breakdown** so weak categories surface even when overall pass rate looks healthy.
+- **Worst-K** ranked by composite score (mean of non-None metric scores), to jump straight to the cases worth investigating.
+- **Per-case table** with every metric for every case.
+
+Under the hood: `POST /api/eval/batch` clones the supplied graph per case, overrides the `EvalCaseLoader.case_id`, runs through the engine, harvests the `metric` output from each metric node by type, and aggregates via `core/eval_metrics.aggregate_batch`. Guard short-circuits show up as all-N/A rows — useful as a clean "this query was blocked correctly" signal. Because the editor pipeline does **not** include the LLM generator, this is a fast, deterministic retrieval-only eval; the CLI `eval/runner.py` remains the right tool when you need answer-level checks and the LLM judge.
+
 ## Configuration
 
 All settings can be overridden via environment variables (`RAG_` prefix) or a `.env` file:
@@ -188,7 +201,7 @@ cp .env.example .env
 | `RAG_CHROMA_PERSIST_PATH` | `./chroma_db` | ChromaDB storage path |
 | `RAG_TOP_K` | `5` | Number of chunks to retrieve |
 | `RAG_SCORE_THRESHOLD` | `0.3` | Minimum relevance score |
-| `RAG_KEYWORD_BOOST` | `0.5` | Keyword boosting weight |
+| `RAG_KEYWORD_BOOST` | `0.3` | Keyword boosting weight |
 | `RAG_CHUNK_SIZE` | `500` | Chunk size in characters |
 | `RAG_CHUNK_OVERLAP` | `50` | Overlap between chunks |
 | `RAG_OUTPUT_MODE` | `professional` | Chat UI persona (`professional` / `chatbot`) |
