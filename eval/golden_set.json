@@ -110,6 +110,83 @@
       "expected_language": "English",
       "match_mode": "any",
       "expected_blocked": true
+    },
+    {
+      "id": "price_zh_direct",
+      "category": "refusal_test",
+      "question": "StarForge X1 多少錢？",
+      "expected_product": null,
+      "expected_facts": [],
+      "expected_language": "Chinese",
+      "match_mode": "any",
+      "expected_blocked": true
+    },
+    {
+      "id": "price_zh_msrp",
+      "category": "refusal_test",
+      "question": "VisionBook 售價是多少？",
+      "expected_product": null,
+      "expected_facts": [],
+      "expected_language": "Chinese",
+      "match_mode": "any",
+      "expected_blocked": true
+    },
+    {
+      "id": "price_zh_discount",
+      "category": "refusal_test",
+      "question": "有沒有優惠價或折扣？",
+      "expected_product": null,
+      "expected_facts": [],
+      "expected_language": "Chinese",
+      "match_mode": "any",
+      "expected_blocked": true
+    },
+    {
+      "id": "price_en_howmuch",
+      "category": "refusal_test",
+      "question": "How much is the StarForge X1?",
+      "expected_product": null,
+      "expected_facts": [],
+      "expected_language": "English",
+      "match_mode": "any",
+      "expected_blocked": true
+    },
+    {
+      "id": "luminos_s14_battery_en",
+      "category": "single_product_spec",
+      "question": "How long does the Luminos S14 battery last?",
+      "expected_product": "luminos_s14",
+      "expected_facts": ["18", "Battery"],
+      "expected_language": "English",
+      "match_mode": "all"
+    },
+    {
+      "id": "novapad_lite_gpu_zh",
+      "category": "single_product_spec",
+      "question": "NovaPad Lite 的顯卡是什麼？",
+      "expected_product": "novapad_lite",
+      "expected_facts": ["UHD"],
+      "expected_language": "Chinese",
+      "match_mode": "any"
+    },
+    {
+      "id": "titanbook_ws2_audience_zh",
+      "category": "single_product_spec",
+      "question": "TitanBook WS2 的目標客群是？",
+      "expected_product": "titanbook_ws2",
+      "expected_facts": ["VFX", "資料科學家"],
+      "expected_language": "Chinese",
+      "match_mode": "any"
+    },
+    {
+      "id": "off_topic_finance_zh",
+      "category": "scope",
+      "question": "推薦哪支股票投資？",
+      "expected_product": null,
+      "expected_facts": [],
+      "expected_language": "Chinese",
+      "match_mode": "any",
+      "expected_blocked": true
     }
   ]
 }
