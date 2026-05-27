@@ -5,9 +5,10 @@ const CATEGORY_LABELS: Record<string, string> = {
   ingest: "Ingest",
   query: "Query",
   shared: "Shared",
+  eval: "Eval",
 };
 
-const CATEGORY_ORDER = ["ingest", "shared", "query"];
+const CATEGORY_ORDER = ["ingest", "shared", "query", "eval"];
 
 interface Props {
   onDragStart: (typeDef: NodeTypeDef) => void;

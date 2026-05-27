@@ -38,6 +38,13 @@ from core.critic import critique_answer, revise_answer
 from core.generator import GenerationResult
 from core.personas import get_preset
 from core.product_selector import select_product
+from core.eval_metrics import (
+    compute_coverage,
+    compute_score_distribution,
+    compute_diversity,
+    compute_facts_coverage,
+)
+from pathlib import Path
 from core.product_matcher import detect_product_filter, DEFAULT_BRAND_ALIASES
 import json
 
@@ -615,11 +622,232 @@ def execute_result_display(inputs: dict, params: dict) -> dict:
     if answer is None:
         return {"_preview": "(no input)"}
 
-    # answer 是 GenerationResult dataclass
-    text = answer.text if hasattr(answer, "text") else str(answer)
+    # answer 是 GenerationResult dataclass — 但也可能是字串（eval_report 等節點）
+    if hasattr(answer, "text"):
+        text = answer.text
+    elif isinstance(answer, str):
+        text = answer
+    else:
+        text = str(answer)
     print(f"[Executor:ResultDisplay] Output length: {len(text)} chars")
     return {
         "_preview": text,
+    }
+
+
+# ── Eval executors (Editor-only) ───────────────────────────────────
+
+def _parse_facts(raw: str) -> list[str]:
+    """Newline-separated facts → cleaned list. Empty input → []."""
+    if not raw:
+        return []
+    return [line.strip() for line in raw.splitlines() if line.strip()]
+
+
+def execute_eval_case_loader(inputs: dict, params: dict) -> dict:
+    """Load one case from a golden_set JSON file by case_id."""
+    case_id = (params.get("case_id") or "").strip()
+    path_str = (params.get("golden_set_path") or "eval/golden_set.json").strip()
+    path = Path(path_str)
+
+    empty_out = {
+        "query": "",
+        "expected_product": "",
+        "expected_facts": "",
+        "match_mode": "all",
+    }
+
+    if not case_id:
+        return {**empty_out, "_preview": "(case_id is empty)"}
+    if not path.exists():
+        return {**empty_out, "_preview": f"(file not found: {path})"}
+
+    try:
+        data = json.loads(path.read_text())
+    except Exception as e:
+        return {**empty_out, "_preview": f"(parse error: {e})"}
+
+    cases = data.get("cases", []) or []
+    case = next((c for c in cases if c.get("id") == case_id), None)
+    if case is None:
+        return {**empty_out, "_preview": f"(case_id not found: {case_id})"}
+
+    facts = case.get("expected_facts") or []
+    facts_str = "\n".join(facts)
+
+    preview_obj = {
+        "case_id": case_id,
+        "category": case.get("category"),
+        "expected_language": case.get("expected_language"),
+        "expected_product": case.get("expected_product"),
+        "expected_facts": facts,
+        "match_mode": case.get("match_mode", "all"),
+    }
+    return {
+        "query": case.get("question", ""),
+        "expected_product": case.get("expected_product") or "",
+        "expected_facts": facts_str,
+        "match_mode": case.get("match_mode", "all"),
+        "_preview": json.dumps(preview_obj, ensure_ascii=False, indent=2),
+    }
+
+
+def execute_coverage_metric(inputs: dict, params: dict) -> dict:
+    """Hit@K + rank of expected_product in top-K retrieved chunks."""
+    results = inputs.get("results") or []
+    expected = (inputs.get("expected_product") or params.get("expected_product") or "").strip()
+    top_k = int(params.get("top_k", 5))
+
+    metric = compute_coverage(results, expected, top_k)
+    d = metric["details"]
+    if metric["score"] is None:
+        preview = f"Coverage: N/A — {d.get('note', '')}"
+    else:
+        rank_str = f"#{d['rank']}" if d.get("rank") else "miss"
+        preview = (
+            f"Coverage: {'HIT' if d['hit'] else 'MISS'} ({rank_str} of top-{d['top_k']})\n"
+            f"expected: {d['expected_product']}\n"
+            f"retrieved: {d['retrieved_products']}"
+        )
+    return {"metric": metric, "_preview": preview}
+
+
+def execute_score_distribution_metric(inputs: dict, params: dict) -> dict:
+    """Score statistics across top-K."""
+    results = inputs.get("results") or []
+    top_k = int(params.get("top_k", 5))
+
+    metric = compute_score_distribution(results, top_k)
+    d = metric["details"]
+    if d.get("count", 0) == 0:
+        preview = "Scores: (no results)"
+    else:
+        preview = (
+            f"Scores top-{d['count']}: min={d['min']:.3f} max={d['max']:.3f} "
+            f"mean={d['mean']:.3f} std={d['std']:.3f}\n"
+            f"top1={d['top1']:.3f} topK={d['topk']:.3f} gap={d['gap_top1_topk']:.3f}"
+        )
+    return {"metric": metric, "_preview": preview}
+
+
+def execute_diversity_metric(inputs: dict, params: dict) -> dict:
+    """Product diversity / entropy of top-K."""
+    results = inputs.get("results") or []
+    top_k = int(params.get("top_k", 5))
+
+    metric = compute_diversity(results, top_k)
+    d = metric["details"]
+    if metric["score"] is None:
+        preview = f"Diversity: N/A — {d.get('note', '')}"
+    else:
+        preview = (
+            f"Diversity: {d['unique_products']} products in top-{d['top_k']}, "
+            f"entropy_norm={d['entropy_normalized']:.3f}\n"
+            f"distribution: {d['distribution']}\n"
+            f"dominant: {d['dominant_pid']} ({d['dominant_share']:.0%})"
+        )
+    return {"metric": metric, "_preview": preview}
+
+
+def execute_facts_coverage_metric(inputs: dict, params: dict) -> dict:
+    """Keyword recall of expected_facts in retrieved text."""
+    results = inputs.get("results") or []
+    facts_raw = inputs.get("expected_facts")
+    if facts_raw is None or facts_raw == "":
+        facts_raw = params.get("expected_facts", "")
+    facts = _parse_facts(facts_raw)
+    match_mode = (inputs.get("match_mode") or params.get("match_mode") or "all").strip()
+    if match_mode not in ("all", "any"):
+        match_mode = "all"
+
+    metric = compute_facts_coverage(results, facts, match_mode)
+    d = metric["details"]
+    if metric["score"] is None:
+        preview = f"Facts: N/A — {d.get('note', '')}"
+    else:
+        preview = (
+            f"Facts ({d['mode']}): {d['matched_count']}/{d['total_facts']} matched "
+            f"(score={metric['score']:.3f})\n"
+            f"matched: {d['matched']}\n"
+            f"missing: {d['missing']}"
+        )
+    return {"metric": metric, "_preview": preview}
+
+
+def execute_eval_report(inputs: dict, params: dict) -> dict:
+    """Aggregate up to 4 metrics into a markdown summary. Unwired ports skipped."""
+    sections = []
+    PASS_THRESHOLD = 0.5  # mirrors eval/scorer.py
+
+    def fmt_score(s):
+        if s is None:
+            return "N/A"
+        flag = "✓" if s >= PASS_THRESHOLD else "✗"
+        return f"{s:.3f} {flag}"
+
+    coverage = inputs.get("coverage")
+    if isinstance(coverage, dict):
+        d = coverage["details"]
+        if coverage["score"] is None:
+            sections.append(f"### Coverage (Hit@K)\n_{d.get('note', 'N/A')}_\n")
+        else:
+            rank_str = f"rank #{d['rank']}" if d.get("rank") else "missed"
+            sections.append(
+                f"### Coverage (Hit@K)\n"
+                f"- score: **{fmt_score(coverage['score'])}**\n"
+                f"- expected: `{d['expected_product']}`\n"
+                f"- result: {'HIT' if d['hit'] else 'MISS'} ({rank_str} in top-{d['top_k']})\n"
+                f"- retrieved: `{d['retrieved_products']}`\n"
+            )
+
+    scores = inputs.get("score_distribution")
+    if isinstance(scores, dict):
+        d = scores["details"]
+        if d.get("count", 0) == 0:
+            sections.append("### Score Distribution\n_no results_\n")
+        else:
+            sections.append(
+                f"### Score Distribution\n"
+                f"- top-{d['count']}: min={d['min']:.3f} / max={d['max']:.3f} / mean={d['mean']:.3f} / std={d['std']:.3f}\n"
+                f"- top1={d['top1']:.3f}, topK={d['topk']:.3f}, gap={d['gap_top1_topk']:.3f}\n"
+                f"- scores: `{d['scores']}`\n"
+            )
+
+    diversity = inputs.get("diversity")
+    if isinstance(diversity, dict):
+        d = diversity["details"]
+        if diversity["score"] is None:
+            sections.append(f"### Diversity\n_{d.get('note', 'N/A')}_\n")
+        else:
+            sections.append(
+                f"### Diversity\n"
+                f"- entropy_normalized: **{fmt_score(diversity['score'])}**\n"
+                f"- unique products in top-{d['top_k']}: {d['unique_products']}\n"
+                f"- distribution: `{d['distribution']}`\n"
+                f"- dominant: `{d['dominant_pid']}` ({d['dominant_share']:.0%})\n"
+            )
+
+    facts = inputs.get("facts_coverage")
+    if isinstance(facts, dict):
+        d = facts["details"]
+        if facts["score"] is None:
+            sections.append(f"### Facts Coverage\n_{d.get('note', 'N/A')}_\n")
+        else:
+            sections.append(
+                f"### Facts Coverage\n"
+                f"- score ({d['mode']}): **{fmt_score(facts['score'])}**\n"
+                f"- matched ({d['matched_count']}/{d['total_facts']}): `{d['matched']}`\n"
+                f"- missing: `{d['missing']}`\n"
+            )
+
+    if not sections:
+        report = "# Eval Report\n\n_no metrics wired_"
+    else:
+        report = "# Eval Report\n\n" + "\n".join(sections)
+
+    return {
+        "answer": report,
+        "_preview": report,
     }
 
 
@@ -643,4 +871,10 @@ EXECUTORS: dict[str, callable] = {
     "generator": execute_generator,
     "output_critic": execute_output_critic,
     "result_display": execute_result_display,
+    "eval_case_loader": execute_eval_case_loader,
+    "coverage_metric": execute_coverage_metric,
+    "score_distribution_metric": execute_score_distribution_metric,
+    "diversity_metric": execute_diversity_metric,
+    "facts_coverage_metric": execute_facts_coverage_metric,
+    "eval_report": execute_eval_report,
 }

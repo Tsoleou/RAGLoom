@@ -19,6 +19,7 @@ import { NodePalette } from "./NodePalette";
 import { NodeConfigPanel } from "./NodeConfigPanel";
 import { ExecutionBar } from "./ExecutionBar";
 import { RobotAvatar } from "./RobotAvatar";
+import { BatchEvalModal } from "./BatchEvalModal";
 import { useExecution } from "../hooks/useExecution";
 import { useNodeTypes } from "../hooks/useNodeTypes";
 import {
@@ -238,12 +239,19 @@ export function FlowEditor() {
         console.warn("[FlowEditor] Invalid connection: port types don't match");
         return;
       }
+      // Color new edges by their source-port dataType so the eval family
+      // (metric edges) reads visually distinct from the rest of the graph.
+      const sourceNode = nodes.find((n) => n.id === connection.source);
+      const sourcePort = sourceNode?.data.outputs.find(
+        (p: { name: string; dataType: string }) => p.name === connection.sourceHandle
+      );
+      const stroke = sourcePort?.dataType === "metric" ? "#a070d0" : "#e07830";
       setEdges((eds) =>
         addEdge(
           {
             ...connection,
             animated: true,
-            style: { strokeWidth: 2, stroke: "#e07830" },
+            style: { strokeWidth: 2, stroke },
           },
           eds
         )
@@ -338,6 +346,7 @@ export function FlowEditor() {
   // Profile state: each profile carries the full {nodes, edges} so chat and
   // editor see the same setup. Same shape as /api/default-graph.
   const [savedProfiles, setSavedProfiles] = useState<Record<string, { graph?: SerializedGraph }>>({});
+  const [batchEvalOpen, setBatchEvalOpen] = useState(false);
 
   useEffect(() => {
     fetch("/api/profiles")
@@ -376,6 +385,28 @@ export function FlowEditor() {
     setNodes(restoredNodes);
     setEdges(restoredEdges);
   }, [savedProfiles, setNodes, setEdges, byTypeId]);
+
+  // Build the SerializedGraph for the batch-eval modal. Same shape we send
+  // when saving a profile, computed on demand.
+  const buildSerializedGraph = useCallback((): SerializedGraph => ({
+    nodes: nodes.map((n) => ({
+      id: n.id,
+      type: n.data.typeId,
+      position: n.position,
+      params: n.data.params,
+    })),
+    edges: edges.map((e) => ({
+      source: e.source,
+      target: e.target,
+      sourceHandle: e.sourceHandle ?? "",
+      targetHandle: e.targetHandle ?? "",
+    })),
+  }), [nodes, edges]);
+
+  const hasEvalCaseLoader = useMemo(
+    () => nodes.some((n) => n.data.typeId === "eval_case_loader"),
+    [nodes]
+  );
 
   // ── Selected node data ──────────────────────────────────────
 
@@ -454,6 +485,13 @@ export function FlowEditor() {
           onSaveProfile={handleSaveProfile}
           profiles={savedProfiles}
           onLoadProfile={handleLoadProfile}
+          canRunBatch={hasEvalCaseLoader}
+          onRunBatch={() => setBatchEvalOpen(true)}
+        />
+        <BatchEvalModal
+          open={batchEvalOpen}
+          graph={buildSerializedGraph()}
+          onClose={() => setBatchEvalOpen(false)}
         />
 
         <div className="flex-1 relative" ref={reactFlowWrapper}>

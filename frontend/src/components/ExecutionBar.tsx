@@ -10,6 +10,8 @@ interface Props {
   onSaveProfile: (name: string) => Promise<void>;
   profiles: Record<string, unknown>;
   onLoadProfile: (name: string) => void;
+  canRunBatch: boolean;
+  onRunBatch: () => void;
 }
 
 export function ExecutionBar({
@@ -22,6 +24,8 @@ export function ExecutionBar({
   onSaveProfile,
   profiles,
   onLoadProfile,
+  canRunBatch,
+  onRunBatch,
 }: Props) {
   const [saving, setSaving] = useState(false);
   const [profileName, setProfileName] = useState("");
@@ -71,6 +75,18 @@ export function ExecutionBar({
         >
           Clear
         </button>
+
+        {/* Run Batch Eval (visible when current graph carries an eval_case_loader) */}
+        {canRunBatch && (
+          <button
+            onClick={onRunBatch}
+            disabled={isRunning}
+            title="Run this graph against multiple golden-set cases"
+            className="px-3 py-1.5 text-xs font-medium rounded-md border border-[#a070d0]/40 text-[#a070d0] hover:bg-[#a070d0]/10 hover:border-[#a070d0] disabled:opacity-40 transition-colors"
+          >
+            Run Batch ▸
+          </button>
+        )}
 
         {/* Load Profile */}
         <div className="relative border-l border-[#2a2a2a] pl-3" ref={loadMenuRef}>

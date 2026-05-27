@@ -359,6 +359,18 @@ class ActivateProfileRequest(BaseModel):
     name: str
 
 
+class BatchEvalScope(BaseModel):
+    mode: str  # "all" | "category" | "ids"
+    category: str | None = None
+    case_ids: list[str] | None = None
+
+
+class BatchEvalRequest(BaseModel):
+    graph: dict
+    scope: BatchEvalScope
+    worst_k: int = 3
+
+
 # ── REST Endpoints ─────────────────────────────────────────────────
 
 @app.get("/api/node-types")
@@ -701,6 +713,138 @@ def chat_reset():
     if chat_pipe is not None:
         chat_pipe.reset_conversation()
     return {"status": "ok"}
+
+
+# ── Batch eval ─────────────────────────────────────────────────────
+
+_GOLDEN_SET_PATH_DEFAULT = Path("eval/golden_set.json")
+
+
+def _load_golden_set_cases() -> list[dict]:
+    if not _GOLDEN_SET_PATH_DEFAULT.exists():
+        return []
+    try:
+        data = json.loads(_GOLDEN_SET_PATH_DEFAULT.read_text())
+    except Exception as e:
+        print(f"[BatchEval] Failed to load golden set: {e}")
+        return []
+    return data.get("cases") or []
+
+
+def _select_cases(scope: BatchEvalScope) -> list[dict]:
+    cases = _load_golden_set_cases()
+    mode = (scope.mode or "all").lower()
+    if mode == "all":
+        return cases
+    if mode == "category":
+        cat = scope.category or ""
+        return [c for c in cases if (c.get("category") or "") == cat]
+    if mode == "ids":
+        wanted = set(scope.case_ids or [])
+        return [c for c in cases if c.get("id") in wanted]
+    raise HTTPException(status_code=400, detail=f"Unknown scope mode: {scope.mode}")
+
+
+_METRIC_NODE_TYPES = {
+    "coverage_metric": "coverage",
+    "score_distribution_metric": "score_distribution",
+    "diversity_metric": "diversity",
+    "facts_coverage_metric": "facts_coverage",
+}
+
+
+def _harvest_metrics(nodes: list[dict], outputs: dict) -> dict:
+    """For each metric node type present in the graph, pull its first occurrence's
+    `metric` output. Metric nodes the user didn't include are simply absent."""
+    harvested: dict = {key: None for key in _METRIC_NODE_TYPES.values()}
+    for n in nodes:
+        ntype = n.get("type")
+        key = _METRIC_NODE_TYPES.get(ntype)
+        if key is None or harvested.get(key) is not None:
+            continue
+        node_out = outputs.get(n["id"]) or {}
+        metric = node_out.get("metric")
+        if isinstance(metric, dict):
+            harvested[key] = metric
+    return harvested
+
+
+@app.post("/api/eval/batch")
+def batch_eval(req: BatchEvalRequest):
+    """Run the editor graph once per selected golden_set case, harvest metrics
+    from coverage/score_distribution/diversity/facts_coverage nodes, return
+    per-case results plus aggregate (macro, per-category, worst-K).
+
+    Requires the graph to contain an eval_case_loader — its case_id param is
+    overridden per iteration. Other node params are preserved as-is.
+    """
+    from copy import deepcopy
+    from core.eval_metrics import aggregate_batch
+
+    graph = req.graph or {}
+    nodes = list(graph.get("nodes") or [])
+    edges = list(graph.get("edges") or [])
+    if not nodes:
+        raise HTTPException(status_code=400, detail="Graph has no nodes")
+
+    loader_node = next((n for n in nodes if n.get("type") == "eval_case_loader"), None)
+    if loader_node is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Graph must contain an eval_case_loader node",
+        )
+
+    selected = _select_cases(req.scope)
+    if not selected:
+        return {
+            "per_case": [],
+            "aggregate": aggregate_batch([], worst_k=req.worst_k),
+            "skipped": [],
+        }
+
+    per_case = []
+    skipped = []
+    loader_id = loader_node["id"]
+    for case in selected:
+        case_id = case.get("id")
+        case_nodes = deepcopy(nodes)
+        for n in case_nodes:
+            if n.get("id") == loader_id:
+                params = dict(n.get("params") or {})
+                params["case_id"] = case_id
+                n["params"] = params
+                break
+
+        try:
+            _node_results, outputs = execute_graph(
+                case_nodes, edges, return_outputs=True
+            )
+        except Exception as e:
+            skipped.append({"case_id": case_id, "reason": f"graph error: {e}"})
+            continue
+
+        metrics = _harvest_metrics(case_nodes, outputs)
+        per_case.append({
+            "case_id": case_id,
+            "category": case.get("category") or "uncategorized",
+            "metrics": metrics,
+        })
+
+    return {
+        "per_case": per_case,
+        "aggregate": aggregate_batch(per_case, worst_k=req.worst_k),
+        "skipped": skipped,
+    }
+
+
+@app.get("/api/eval/cases")
+def get_golden_set_cases():
+    """List all golden_set cases (id + category) for the batch-scope UI."""
+    cases = _load_golden_set_cases()
+    return [
+        {"id": c.get("id"), "category": c.get("category") or "uncategorized"}
+        for c in cases
+    ]
 
 
 # ── WebSocket Endpoint ─────────────────────────────────────────────

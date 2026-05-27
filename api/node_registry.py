@@ -446,6 +446,140 @@ _register(NodeType(
 ))
 
 
+# ── Eval nodes (Editor-only) ───────────────────────────────────────
+# These are observation / debug nodes for retrieval quality. They do NOT
+# appear in the default chat graph and are not used by ChatView. Drag them
+# in the editor to wire ad-hoc eval pipelines.
+
+# --- Eval Case Loader ---
+_register(NodeType(
+    type_id="eval_case_loader",
+    label="Eval Case Loader",
+    label_en="EvalCaseLoader",
+    description=(
+        "Load one case from eval/golden_set.json by case_id. Emits the "
+        "question + expected_product + expected_facts (newline-joined) so "
+        "downstream metric nodes get their ground truth wired automatically."
+    ),
+    category="eval",
+    inputs=[],
+    outputs=[
+        Port("query", "query", "Query Text"),
+        Port("expected_product", "string", "Expected Product"),
+        Port("expected_facts", "string", "Expected Facts"),
+        Port("match_mode", "string", "Match Mode"),
+    ],
+    params=[
+        ParamDef("case_id", "Case ID", "string", "starforge_x1_gpu_en"),
+        ParamDef("golden_set_path", "Golden Set Path", "string", "eval/golden_set.json"),
+    ],
+))
+
+# --- Coverage Metric ---
+_register(NodeType(
+    type_id="coverage_metric",
+    label="Coverage (Hit@K)",
+    label_en="CoverageMetric",
+    description=(
+        "Did expected_product appear in top-K retrieved chunks, and at "
+        "what rank? Input port `expected_product` overrides the param "
+        "when wired. Mirrors eval/scorer.py Retrieval scoring."
+    ),
+    category="eval",
+    inputs=[
+        Port("results", "results", "Retrieval Results"),
+        Port("expected_product", "string", "Expected Product"),
+    ],
+    outputs=[Port("metric", "metric", "Metric")],
+    params=[
+        ParamDef("expected_product", "Expected Product (fallback)", "string", ""),
+        ParamDef("top_k", "Top K", "number", 5),
+    ],
+))
+
+# --- Score Distribution Metric ---
+_register(NodeType(
+    type_id="score_distribution_metric",
+    label="Score Distribution",
+    label_en="ScoreDistributionMetric",
+    description=(
+        "Top-K similarity score statistics: min/max/mean/std + the gap "
+        "between top-1 and top-K. Diagnoses 'all noise' retrieval where "
+        "every chunk scores low."
+    ),
+    category="eval",
+    inputs=[Port("results", "results", "Retrieval Results")],
+    outputs=[Port("metric", "metric", "Metric")],
+    params=[
+        ParamDef("top_k", "Top K", "number", 5),
+    ],
+))
+
+# --- Diversity Metric ---
+_register(NodeType(
+    type_id="diversity_metric",
+    label="Product Diversity",
+    label_en="DiversityMetric",
+    description=(
+        "How many distinct product_ids appear in top-K, plus Shannon "
+        "entropy (normalized to log2(top_k)). Useful for comparison "
+        "queries — low entropy means retrieval was dominated by one "
+        "product even though the question spans many."
+    ),
+    category="eval",
+    inputs=[Port("results", "results", "Retrieval Results")],
+    outputs=[Port("metric", "metric", "Metric")],
+    params=[
+        ParamDef("top_k", "Top K", "number", 5),
+    ],
+))
+
+# --- Facts Coverage Metric ---
+_register(NodeType(
+    type_id="facts_coverage_metric",
+    label="Facts Coverage",
+    label_en="FactsCoverageMetric",
+    description=(
+        "Retrieval-level analogue of faithfulness — what fraction of "
+        "expected_facts appear (case-insensitive substring) in the "
+        "concatenated retrieved chunk text? Algorithm matches "
+        "eval/scorer.py::_score_faithfulness. Input ports override params."
+    ),
+    category="eval",
+    inputs=[
+        Port("results", "results", "Retrieval Results"),
+        Port("expected_facts", "string", "Expected Facts"),
+        Port("match_mode", "string", "Match Mode"),
+    ],
+    outputs=[Port("metric", "metric", "Metric")],
+    params=[
+        ParamDef("expected_facts", "Expected Facts (one per line, fallback)", "textarea", ""),
+        ParamDef("match_mode", "Match Mode (fallback)", "select", "all", options=["all", "any"]),
+    ],
+))
+
+# --- Eval Report ---
+_register(NodeType(
+    type_id="eval_report",
+    label="Eval Report",
+    label_en="EvalReport",
+    description=(
+        "Aggregate up to 4 metric ports into a single markdown summary. "
+        "Each input is optional — unwired ports are skipped. Preview is "
+        "renderable in a Result Display node downstream."
+    ),
+    category="eval",
+    inputs=[
+        Port("coverage", "metric", "Coverage"),
+        Port("score_distribution", "metric", "Score Distribution"),
+        Port("diversity", "metric", "Diversity"),
+        Port("facts_coverage", "metric", "Facts Coverage"),
+    ],
+    outputs=[Port("answer", "answer", "Report (markdown)")],
+    params=[],
+))
+
+
 def get_node_types_json() -> list[dict]:
     """回傳所有節點類型的 JSON 格式，供前端使用。"""
     result = []

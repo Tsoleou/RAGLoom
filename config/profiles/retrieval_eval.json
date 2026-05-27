@@ -1,0 +1,252 @@
+{
+  "nodes": [
+    {
+      "id": "loader",
+      "type": "loader",
+      "position": { "x": 0, "y": 80 },
+      "params": { "source_path": "./knowledge_base" }
+    },
+    {
+      "id": "chunker",
+      "type": "chunker",
+      "position": { "x": 280, "y": 80 },
+      "params": { "strategy": "section", "chunk_size": 500, "chunk_overlap": 50 }
+    },
+    {
+      "id": "embedder",
+      "type": "embedder",
+      "position": { "x": 560, "y": 80 },
+      "params": { "model": "nomic-embed-text" }
+    },
+    {
+      "id": "vstore",
+      "type": "vectorstore",
+      "position": { "x": 840, "y": 80 },
+      "params": {
+        "persist_path": "./chroma_db",
+        "collection_name": "rag_collection",
+        "wipe_collection": false
+      }
+    },
+    {
+      "id": "case",
+      "type": "eval_case_loader",
+      "position": { "x": 0, "y": 360 },
+      "params": {
+        "case_id": "starforge_x1_gpu_en",
+        "golden_set_path": "eval/golden_set.json"
+      }
+    },
+    {
+      "id": "guardrail",
+      "type": "guardrail",
+      "position": { "x": 320, "y": 360 },
+      "params": {
+        "blocked_keywords": "asus, acer, msi, hp, dell, apple",
+        "refusal_message": "I'm sorry, but I can only answer questions about our own products."
+      }
+    },
+    {
+      "id": "retriever",
+      "type": "retriever",
+      "position": { "x": 840, "y": 360 },
+      "params": {
+        "top_k": 5,
+        "score_threshold": 0.0,
+        "keyword_boost": 0.3,
+        "embedding_model": "nomic-embed-text",
+        "product_filter": ""
+      }
+    },
+    {
+      "id": "cov",
+      "type": "coverage_metric",
+      "position": { "x": 1180, "y": 140 },
+      "params": { "expected_product": "", "top_k": 5 }
+    },
+    {
+      "id": "sd",
+      "type": "score_distribution_metric",
+      "position": { "x": 1180, "y": 280 },
+      "params": { "top_k": 5 }
+    },
+    {
+      "id": "div",
+      "type": "diversity_metric",
+      "position": { "x": 1180, "y": 420 },
+      "params": { "top_k": 5 }
+    },
+    {
+      "id": "fc",
+      "type": "facts_coverage_metric",
+      "position": { "x": 1180, "y": 560 },
+      "params": { "expected_facts": "", "match_mode": "all" }
+    },
+    {
+      "id": "report",
+      "type": "eval_report",
+      "position": { "x": 1500, "y": 360 },
+      "params": {}
+    },
+    {
+      "id": "display",
+      "type": "result_display",
+      "position": { "x": 1800, "y": 360 },
+      "params": {}
+    }
+  ],
+  "edges": [
+    {
+      "source": "loader",
+      "target": "chunker",
+      "sourceHandle": "documents",
+      "targetHandle": "documents",
+      "animated": true,
+      "style": { "strokeWidth": 2, "stroke": "#e07830" }
+    },
+    {
+      "source": "chunker",
+      "target": "embedder",
+      "sourceHandle": "chunks",
+      "targetHandle": "chunks",
+      "animated": true,
+      "style": { "strokeWidth": 2, "stroke": "#e07830" }
+    },
+    {
+      "source": "chunker",
+      "target": "vstore",
+      "sourceHandle": "chunks",
+      "targetHandle": "chunks",
+      "animated": true,
+      "style": { "strokeWidth": 2, "stroke": "#e07830" }
+    },
+    {
+      "source": "embedder",
+      "target": "vstore",
+      "sourceHandle": "embeddings",
+      "targetHandle": "embeddings",
+      "animated": true,
+      "style": { "strokeWidth": 2, "stroke": "#e07830" }
+    },
+    {
+      "source": "vstore",
+      "target": "retriever",
+      "sourceHandle": "collection",
+      "targetHandle": "collection",
+      "animated": true,
+      "style": { "strokeWidth": 2, "stroke": "#e07830" }
+    },
+    {
+      "source": "case",
+      "target": "guardrail",
+      "sourceHandle": "query",
+      "targetHandle": "query_in",
+      "animated": true,
+      "style": { "strokeWidth": 2, "stroke": "#e07830" }
+    },
+    {
+      "source": "guardrail",
+      "target": "retriever",
+      "sourceHandle": "query_out",
+      "targetHandle": "query",
+      "animated": true,
+      "style": { "strokeWidth": 2, "stroke": "#e07830" }
+    },
+    {
+      "source": "case",
+      "target": "cov",
+      "sourceHandle": "expected_product",
+      "targetHandle": "expected_product",
+      "animated": true,
+      "style": { "strokeWidth": 2, "stroke": "#d0c060" }
+    },
+    {
+      "source": "case",
+      "target": "fc",
+      "sourceHandle": "expected_facts",
+      "targetHandle": "expected_facts",
+      "animated": true,
+      "style": { "strokeWidth": 2, "stroke": "#d0c060" }
+    },
+    {
+      "source": "case",
+      "target": "fc",
+      "sourceHandle": "match_mode",
+      "targetHandle": "match_mode",
+      "animated": true,
+      "style": { "strokeWidth": 2, "stroke": "#d0c060" }
+    },
+    {
+      "source": "retriever",
+      "target": "cov",
+      "sourceHandle": "results",
+      "targetHandle": "results",
+      "animated": true,
+      "style": { "strokeWidth": 2, "stroke": "#e07830" }
+    },
+    {
+      "source": "retriever",
+      "target": "sd",
+      "sourceHandle": "results",
+      "targetHandle": "results",
+      "animated": true,
+      "style": { "strokeWidth": 2, "stroke": "#e07830" }
+    },
+    {
+      "source": "retriever",
+      "target": "div",
+      "sourceHandle": "results",
+      "targetHandle": "results",
+      "animated": true,
+      "style": { "strokeWidth": 2, "stroke": "#e07830" }
+    },
+    {
+      "source": "retriever",
+      "target": "fc",
+      "sourceHandle": "results",
+      "targetHandle": "results",
+      "animated": true,
+      "style": { "strokeWidth": 2, "stroke": "#e07830" }
+    },
+    {
+      "source": "cov",
+      "target": "report",
+      "sourceHandle": "metric",
+      "targetHandle": "coverage",
+      "animated": true,
+      "style": { "strokeWidth": 2, "stroke": "#a070d0" }
+    },
+    {
+      "source": "sd",
+      "target": "report",
+      "sourceHandle": "metric",
+      "targetHandle": "score_distribution",
+      "animated": true,
+      "style": { "strokeWidth": 2, "stroke": "#a070d0" }
+    },
+    {
+      "source": "div",
+      "target": "report",
+      "sourceHandle": "metric",
+      "targetHandle": "diversity",
+      "animated": true,
+      "style": { "strokeWidth": 2, "stroke": "#a070d0" }
+    },
+    {
+      "source": "fc",
+      "target": "report",
+      "sourceHandle": "metric",
+      "targetHandle": "facts_coverage",
+      "animated": true,
+      "style": { "strokeWidth": 2, "stroke": "#a070d0" }
+    },
+    {
+      "source": "report",
+      "target": "display",
+      "sourceHandle": "answer",
+      "targetHandle": "answer",
+      "animated": true,
+      "style": { "strokeWidth": 2, "stroke": "#e07830" }
+    }
+  ]
+}
