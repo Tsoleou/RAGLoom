@@ -30,7 +30,13 @@ from core.vector_store import RetrievalResult
 
 
 DEFAULT_MIN_SCORE: float = 0.7
-DEFAULT_MARGIN_THRESHOLD: float = 0.0
+# Negative tolerance accommodates nomic-embed-text's cross-lingual noise:
+# Chinese technical-noun queries (e.g. "液態金屬散熱") land around margin
+# -0.21 even when on-topic, because anchor phrases don't lexically overlap
+# with rare technical compound nouns. -0.25 catches those; clear off-topics
+# (finance / sports) still land near or above 0 due to a different failure
+# mode (off-topic anchors don't fully cover all small-talk either).
+DEFAULT_MARGIN_THRESHOLD: float = -0.25
 
 
 # Anchors live outside the KB. Embedded once per (tuple, model) and cached.
@@ -42,8 +48,14 @@ DEFAULT_ON_TOPIC_ANCHORS: list[str] = [
     "Comparing laptop products across brands or models",
     "Questions about laptop hardware: CPU, GPU, RAM, screen, battery, weight, cooling, or thermal design",
     "Questions about specific laptop models, brands, or product lines",
+    # Construction / mechanical-detail anchor: Chinese technical nouns like
+    # "液態金屬" / "鎂合金" / "防窺" carry low cosine to the generic-spec
+    # anchors above but ARE on-topic. Without this, queries like
+    # "哪一台用液態金屬散熱？" land below the margin and get refused.
+    "Questions about laptop cooling, chassis material, build quality, keyboard, hinge, or other construction details",
     "筆記型電腦的規格、價格、功能或推薦",
     "詢問筆電的處理器、顯示卡、記憶體、螢幕、電池、散熱等硬體",
+    "關於筆電的散熱設計、液冷、機殼材質、軸承、鍵盤等機構工藝細節",
     "詢問哪一款筆電適合特定用途",
 ]
 
