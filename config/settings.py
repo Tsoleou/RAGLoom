@@ -52,10 +52,33 @@ class Settings:
     # 輸出模式：professional | chatbot
     output_mode: str = "professional"
 
+    # ── API 安全 ────────────────────────────────────────────────
+    # 空字串 = server 啟動時自動生成，並寫進 .env.local 給前端 vite 讀
+    api_local_token: str = ""
+    # CORS allowed origins（逗號分隔；預設只接受本機 vite dev server）
+    api_allowed_origins: list[str] = field(
+        default_factory=lambda: [
+            "http://localhost:5173",
+            "http://127.0.0.1:5173",
+        ]
+    )
+    # Path guard 允許的根目錄（逗號分隔；graph 上的 source_path/persist_path
+    # 等欄位必須落在這些目錄之下）
+    allowed_data_roots: list[str] = field(
+        default_factory=lambda: [
+            "./knowledge_base",
+            "./eval",
+            "./chroma_db",
+        ]
+    )
+
     @classmethod
     def from_env(cls, env_path: str = ".env") -> "Settings":
         """從環境變數建立 Settings，.env 檔案中的值會覆蓋預設值。"""
         _load_env_file(env_path)
+
+        def _csv(s: str) -> list[str]:
+            return [x.strip() for x in s.split(",") if x.strip()]
 
         env_map = {
             "ollama_base_url": ("RAG_OLLAMA_BASE_URL", str),
@@ -68,6 +91,9 @@ class Settings:
             "chunk_size": ("RAG_CHUNK_SIZE", int),
             "chunk_overlap": ("RAG_CHUNK_OVERLAP", int),
             "output_mode": ("RAG_OUTPUT_MODE", str),
+            "api_local_token": ("RAG_API_TOKEN", str),
+            "api_allowed_origins": ("RAG_API_ALLOWED_ORIGINS", _csv),
+            "allowed_data_roots": ("RAG_ALLOWED_DATA_ROOTS", _csv),
         }
 
         kwargs = {}

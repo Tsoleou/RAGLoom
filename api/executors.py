@@ -10,6 +10,22 @@
 
 from config.settings import Settings
 from core.loader import load_directory, load_file, load_reference_text
+from core.path_guard import safe_path as _safe_path
+
+# Path guard 共用 Settings 一次（避免每次節點執行都重讀 .env）。允許的根目錄
+# 來自 RAG_ALLOWED_DATA_ROOTS env 或預設 ./knowledge_base、./eval、./chroma_db。
+_PATH_GUARD_SETTINGS: Settings | None = None
+
+
+def _allowed_roots() -> list[str]:
+    global _PATH_GUARD_SETTINGS
+    if _PATH_GUARD_SETTINGS is None:
+        _PATH_GUARD_SETTINGS = Settings.from_env()
+    return _PATH_GUARD_SETTINGS.allowed_data_roots
+
+
+def _guard_path(raw: str, kind: str) -> str:
+    return str(_safe_path(raw, allowed_roots=_allowed_roots(), kind=kind))
 from core.chunker import chunk_document
 from core.embedder import embed_chunks
 from core.vector_store import get_client, create_collection, add_chunks, delete_collection
@@ -51,7 +67,9 @@ import json
 
 def execute_loader(inputs: dict, params: dict) -> dict:
     """載入檔案或資料夾。"""
-    source_path = params.get("source_path", "./knowledge_base")
+    source_path = _guard_path(
+        params.get("source_path", "./knowledge_base"), kind="loader source_path"
+    )
 
     if source_path.endswith((".txt", ".md", ".csv", ".pdf")):
         docs = [load_file(source_path)]
@@ -122,7 +140,9 @@ def execute_vectorstore(inputs: dict, params: dict) -> dict:
     """
     chunks = inputs["chunks"]
     embeddings = inputs["embeddings"]
-    persist_path = params.get("persist_path", "./chroma_db")
+    persist_path = _guard_path(
+        params.get("persist_path", "./chroma_db"), kind="vectorstore persist_path"
+    )
     collection_name = params.get("collection_name", "rag_collection")
     wipe_collection = bool(params.get("wipe_collection", False))
 
@@ -149,7 +169,10 @@ def execute_vectorstore(inputs: dict, params: dict) -> dict:
 
 def execute_reference_loader(inputs: dict, params: dict) -> dict:
     """Load always-on reference material (no chunking, no embedding)."""
-    source_path = params.get("source_path", "./knowledge_base/_reference")
+    source_path = _guard_path(
+        params.get("source_path", "./knowledge_base/_reference"),
+        kind="reference_loader source_path",
+    )
     text = load_reference_text(source_path)
     print(f"[Executor:ReferenceLoader] Loaded {len(text)} chars from {source_path}")
     preview = (text[:160] + "...") if len(text) > 160 else text
@@ -648,7 +671,6 @@ def execute_eval_case_loader(inputs: dict, params: dict) -> dict:
     """Load one case from a golden_set JSON file by case_id."""
     case_id = (params.get("case_id") or "").strip()
     path_str = (params.get("golden_set_path") or "eval/golden_set.json").strip()
-    path = Path(path_str)
 
     empty_out = {
         "query": "",
@@ -659,6 +681,12 @@ def execute_eval_case_loader(inputs: dict, params: dict) -> dict:
 
     if not case_id:
         return {**empty_out, "_preview": "(case_id is empty)"}
+
+    try:
+        path = Path(_guard_path(path_str, kind="eval_case_loader golden_set_path"))
+    except ValueError as e:
+        return {**empty_out, "_preview": f"(path rejected: {e})"}
+
     if not path.exists():
         return {**empty_out, "_preview": f"(file not found: {path})"}
 
