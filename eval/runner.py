@@ -78,11 +78,19 @@ def run_case(pipeline: RAGPipeline, case: dict, args: argparse.Namespace) -> Cas
             retrieved_product_ids.append(pid)
         retrieved_chunks.append(r.chunk.text)
 
+    # Inner-guard attribution: PriceGuard / ScopeGate short-circuit inside
+    # pipeline.query() and write to pipeline._last_guards. Without reading
+    # this, scorer thinks blocked=False even when the answer is a canned
+    # refusal — guardrail-expected cases then fail spuriously.
+    inner_blocked = any(
+        g.get("status") == "block" for g in (pipeline._last_guards or [])
+    )
+
     case_result = score_case(
         case=case,
         answer=answer,
         retrieved_product_ids=retrieved_product_ids,
-        blocked=False,
+        blocked=inner_blocked,
     )
 
     # 4. Optional LLM-as-judge pass — skip when pipeline short-circuited

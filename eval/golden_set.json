@@ -7,7 +7,10 @@
       "category": "single_product_spec",
       "question": "What's the GPU on the StarForge X1?",
       "expected_product": "starforge_x1",
-      "expected_facts": ["RTX 4070", "8GB"],
+      "expected_facts": [
+        "RTX 4070",
+        "8GB"
+      ],
       "expected_language": "English",
       "match_mode": "all"
     },
@@ -16,7 +19,11 @@
       "category": "single_product_spec",
       "question": "VisionBook 螢幕規格是什麼？",
       "expected_product": "visionbook",
-      "expected_facts": ["4K", "OLED", "Delta E"],
+      "expected_facts": [
+        "4K",
+        "OLED",
+        "Delta E"
+      ],
       "expected_language": "Chinese",
       "match_mode": "all"
     },
@@ -25,7 +32,10 @@
       "category": "single_product_spec",
       "question": "NovaPad Pro 16 主打什麼客群？",
       "expected_product": "novapad_pro",
-      "expected_facts": ["學生", "CP"],
+      "expected_facts": [
+        "學生",
+        "CP"
+      ],
       "expected_language": "Chinese",
       "match_mode": "any"
     },
@@ -34,7 +44,9 @@
       "category": "single_product_spec",
       "question": "How heavy is the TitanBook M1?",
       "expected_product": "titanbook_m1",
-      "expected_facts": ["1.95"],
+      "expected_facts": [
+        "1.95"
+      ],
       "expected_language": "English",
       "match_mode": "all"
     },
@@ -43,7 +55,10 @@
       "category": "single_product_spec",
       "question": "Luminos Pro 15 的防窺功能怎麼運作？",
       "expected_product": "luminos_pro_15",
-      "expected_facts": ["LuminosShield", "60"],
+      "expected_facts": [
+        "LuminosShield",
+        "60"
+      ],
       "expected_language": "Chinese",
       "match_mode": "any"
     },
@@ -52,7 +67,11 @@
       "category": "single_product_spec",
       "question": "Tell me about the StarForge Phantom's design.",
       "expected_product": "starforge_phantom",
-      "expected_facts": ["Stealth", "Matte", "office"],
+      "expected_facts": [
+        "Stealth",
+        "Matte",
+        "office"
+      ],
       "expected_language": "English",
       "match_mode": "any"
     },
@@ -61,7 +80,10 @@
       "category": "cross_product",
       "question": "Which laptop is best for 4K video editing?",
       "expected_product": null,
-      "expected_facts": ["VisionBook", "OLED"],
+      "expected_facts": [
+        "VisionBook",
+        "OLED"
+      ],
       "expected_language": "English",
       "match_mode": "any"
     },
@@ -70,7 +92,10 @@
       "category": "cross_product",
       "question": "推薦最輕量的工作站等級筆電",
       "expected_product": null,
-      "expected_facts": ["TitanBook", "1.95"],
+      "expected_facts": [
+        "TitanBook",
+        "1.95"
+      ],
       "expected_language": "Chinese",
       "match_mode": "any"
     },
@@ -79,7 +104,10 @@
       "category": "language_test",
       "question": "Tell me about 星鋒 X1",
       "expected_product": "starforge_x1",
-      "expected_facts": ["StarForge", "X1"],
+      "expected_facts": [
+        "StarForge",
+        "X1"
+      ],
       "expected_language": "Chinese",
       "match_mode": "any"
     },
@@ -88,7 +116,12 @@
       "category": "refusal_test",
       "question": "What's the price of the StarForge X1?",
       "expected_product": null,
-      "expected_facts": ["pricing", "don't", "retail"],
+      "expected_blocked": true,
+      "expected_facts": [
+        "pricing",
+        "don't",
+        "retail"
+      ],
       "expected_language": "English",
       "match_mode": "any"
     },
@@ -97,7 +130,12 @@
       "category": "refusal_test",
       "question": "你們有 GalaxyBook 嗎？",
       "expected_product": null,
-      "expected_facts": ["沒", "不"],
+      "expected_facts": [
+        "沒",
+        "不",
+        "没",
+        "目前"
+      ],
       "expected_language": "Chinese",
       "match_mode": "any"
     },
@@ -156,7 +194,10 @@
       "category": "single_product_spec",
       "question": "How long does the Luminos S14 battery last?",
       "expected_product": "luminos_s14",
-      "expected_facts": ["18", "Battery"],
+      "expected_facts": [
+        "18",
+        "Battery"
+      ],
       "expected_language": "English",
       "match_mode": "all"
     },
@@ -165,7 +206,9 @@
       "category": "single_product_spec",
       "question": "NovaPad Lite 的顯卡是什麼？",
       "expected_product": "novapad_lite",
-      "expected_facts": ["UHD"],
+      "expected_facts": [
+        "UHD"
+      ],
       "expected_language": "Chinese",
       "match_mode": "any"
     },
@@ -174,7 +217,10 @@
       "category": "single_product_spec",
       "question": "TitanBook WS2 的目標客群是？",
       "expected_product": "titanbook_ws2",
-      "expected_facts": ["VFX", "資料科學家"],
+      "expected_facts": [
+        "VFX",
+        "資料科學家"
+      ],
       "expected_language": "Chinese",
       "match_mode": "any"
     },
@@ -187,6 +233,125 @@
       "expected_language": "Chinese",
       "match_mode": "any",
       "expected_blocked": true
+    },
+    {
+      "id": "concept_sub_1kg_zh",
+      "category": "concept_query",
+      "question": "哪一台筆電重量不到 1 公斤？",
+      "expected_product": "luminos_go_13",
+      "expected_facts": [
+        "0.99"
+      ],
+      "expected_language": "Chinese",
+      "match_mode": "any"
+    },
+    {
+      "id": "concept_xeon_cpu_en",
+      "category": "concept_query",
+      "question": "Which laptop has a Xeon CPU?",
+      "expected_product": "titanbook_ws2",
+      "expected_facts": [
+        "Xeon"
+      ],
+      "expected_language": "English",
+      "match_mode": "any"
+    },
+    {
+      "id": "concept_liquid_metal_zh",
+      "category": "concept_query",
+      "question": "哪一台筆電用液態金屬散熱？",
+      "expected_product": "starforge_titan_9000",
+      "expected_facts": [
+        "液態金屬",
+        "Liquid Metal"
+      ],
+      "expected_language": "Chinese",
+      "match_mode": "any"
+    },
+    {
+      "id": "concept_privacy_screen_zh",
+      "category": "concept_query",
+      "question": "哪一台筆電有防窺螢幕？",
+      "expected_product": "luminos_pro_15",
+      "expected_facts": [
+        "防窺",
+        "LuminosShield"
+      ],
+      "expected_language": "Chinese",
+      "match_mode": "any"
+    },
+    {
+      "id": "concept_amd_ryzen_en",
+      "category": "concept_query",
+      "question": "Which laptop uses an AMD Ryzen processor?",
+      "expected_product": "novapad_ultra",
+      "expected_facts": [
+        "Ryzen",
+        "AMD"
+      ],
+      "expected_language": "English",
+      "match_mode": "any"
+    },
+    {
+      "id": "concept_360_flip_zh",
+      "category": "concept_query",
+      "question": "哪一台筆電可以 360 度翻轉變形？",
+      "expected_product": "luminos_flex",
+      "expected_facts": [
+        "360",
+        "FlexHinge"
+      ],
+      "expected_language": "Chinese",
+      "match_mode": "any"
+    },
+    {
+      "id": "concept_22hr_battery_en",
+      "category": "concept_query",
+      "question": "Which laptop has 22 hours of battery life?",
+      "expected_product": "luminos_go_13",
+      "expected_facts": [
+        "22"
+      ],
+      "expected_language": "English",
+      "match_mode": "any"
+    },
+    {
+      "id": "concept_isv_cad_zh",
+      "category": "concept_query",
+      "question": "哪一台筆電通過 CAD 軟體 ISV 認證？",
+      "expected_product": "titanbook_ws1",
+      "expected_facts": [
+        "ISV",
+        "Autodesk",
+        "SolidWorks"
+      ],
+      "expected_language": "Chinese",
+      "match_mode": "any"
+    },
+    {
+      "id": "concept_adobergb_video_en",
+      "category": "concept_query",
+      "question": "Which laptop has 99% AdobeRGB color coverage for video work?",
+      "expected_product": "visionbook_studio",
+      "expected_facts": [
+        "AdobeRGB",
+        "Adobe RGB",
+        "99"
+      ],
+      "expected_language": "English",
+      "match_mode": "any"
+    },
+    {
+      "id": "concept_dual_tb5_en",
+      "category": "concept_query",
+      "question": "Which laptop has two Thunderbolt 5 ports?",
+      "expected_product": "visionbook_17",
+      "expected_facts": [
+        "Thunderbolt 5",
+        "TB5"
+      ],
+      "expected_language": "English",
+      "match_mode": "any"
     }
   ]
 }
