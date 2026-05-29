@@ -28,6 +28,14 @@ from core.scope_gate import (
     is_bypass as scope_is_bypass,
     refusal_message as scope_refusal_message,
 )
+from core.constraint_filter import (
+    build_spec_table,
+    extract_constraints,
+    filter_results,
+    filter_reference_rows,
+    any_product_matches,
+    refusal_message as constraint_refusal_message,
+)
 
 
 class RAGPipeline:
@@ -43,10 +51,14 @@ class RAGPipeline:
         self.client = get_client(self.config.chroma_persist_path)
         self.collection = create_collection(self.client)
         self._messages = []  # Ollama 多輪對話歷史（user + assistant，不含 system）
-        self._last_retrieval = []  # 最近一次檢索結果
+        self._last_retrieval = []  # 最近一次檢索結果（未經 constraint filter）
         self._last_guards: list[dict] = []  # 最近一次每層 guard 的決策軌跡
+        self._last_constraint_trace: list[dict] = []  # 最近一次數值約束過濾軌跡
         # Always-on reference data (product comparison tables, etc.)
         self._reference_data = load_reference_text("./knowledge_base/_reference")
+        # Product spec table for constraint filtering — parsed once from the
+        # reference CSV (query-independent). Empty dict if no CSV / no weight col.
+        self._spec_table = build_spec_table(self._reference_data)
         # Cached at init to avoid scanning collection metadata on every query;
         # refreshed on ingest / reset since those are the only mutation paths.
         self._product_ids: set[str] = self._collect_product_ids()
@@ -213,12 +225,54 @@ class RAGPipeline:
         else:
             self._last_guards.append({"name": "ScopeGate", "status": "skip", "detail": f"product routed ({product_id})"})
 
+        # 2.5 Constraint filter — gemma3:4b can't do numeric comparison (it'll
+        # recommend a 1.8kg laptop for "under 1kg" even with the full spec table
+        # in front of it). So we enforce numeric constraints in code: a regex
+        # extracts the constraint (no LLM — deterministic, no hallucination),
+        # then code resolves each candidate's product_id to its canonical spec
+        # and drops violators. Both the retrieved chunks AND the always-on
+        # reference table are filtered, else a violating product slips back in
+        # via the reference block. _last_retrieval stays pre-filter (it feeds
+        # the retrieval-quality metric); only the prompt sees the filtered set.
+        prompt_contexts = results
+        prompt_reference = self._reference_data
+        self._last_constraint_trace = []
+        if self.config.constraint_filter_enabled:
+            constraints = extract_constraints(question)
+            if constraints:
+                # Catalog-scoped "no match" check: refuse only when NO product in
+                # the whole catalog satisfies the constraint — not merely when
+                # retrieval missed the qualifying ones. The canned message claims
+                # "we have none", so the check must be catalog-wide; otherwise a
+                # retrieval miss would falsely refuse a query we can actually serve.
+                if not any_product_matches(constraints, self._spec_table):
+                    descs = ", ".join(c.describe() for c in constraints)
+                    print(f"[Pipeline] Constraint filter BLOCKED — no product matches {descs}")
+                    self._last_guards.append({
+                        "name": "ConstraintFilter", "status": "block",
+                        "detail": f"{descs} (no match)",
+                    })
+                    return GenerationResult(
+                        text=constraint_refusal_message(question, format_hint=persona.format_hint),
+                        messages=self._messages,  # don't pollute history with refusal
+                        model=self.config.llm_model,
+                    )
+                # A product qualifies → filter chunks + reference. Even if retrieval
+                # missed the qualifying product, the filtered reference still carries
+                # it (and only it), so the generator answers from a violator-free set.
+                prompt_contexts, self._last_constraint_trace = filter_results(
+                    results, constraints, self._spec_table
+                )
+                prompt_reference = filter_reference_rows(
+                    self._reference_data, constraints, self._spec_table
+                )
+
         # 3. Build context-only prompt
         prompt = build_prompt(
             query=question,
-            contexts=results,
+            contexts=prompt_contexts,
             glossary=glossary,
-            reference_data=self._reference_data,
+            reference_data=prompt_reference,
             vision_context=vision_context,
         )
 

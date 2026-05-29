@@ -12,6 +12,7 @@ from api.executors import EXECUTORS
 from core.guardrail import GuardrailBlocked
 from core.scope_gate import ScopeBlocked
 from core.price_guard import PriceGuardBlocked
+from core.constraint_filter import ConstraintBlocked
 
 
 # Status constants
@@ -162,7 +163,7 @@ def execute_graph(
             outputs[nid] = output
             results[nid] = {"status": STATUS_DONE, "preview": preview}
             notify(nid, STATUS_DONE, preview)
-        except (GuardrailBlocked, ScopeBlocked, PriceGuardBlocked) as blocked:
+        except (GuardrailBlocked, ScopeBlocked, PriceGuardBlocked, ConstraintBlocked) as blocked:
             # Short-circuit: mark the gate node itself as "blocked", mirror
             # the refusal onto any result_display nodes, stop execution.
             # Same handling for all guards in the family.
@@ -171,6 +172,8 @@ def execute_graph(
                 gate_kind = "guardrail"
             elif isinstance(blocked, PriceGuardBlocked):
                 gate_kind = "price_guard"
+            elif isinstance(blocked, ConstraintBlocked):
+                gate_kind = "constraint_filter"
             else:
                 gate_kind = "scope_gate"
             blocked_meta = {

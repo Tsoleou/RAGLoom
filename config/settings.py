@@ -52,6 +52,10 @@ class Settings:
     # 輸出模式：professional | chatbot
     output_mode: str = "professional"
 
+    # Query 數值約束過濾（Exp2a）：LLM 抽約束 + code 比較過濾。
+    # 關掉 = 維持純檢索行為（eval A/B baseline）。
+    constraint_filter_enabled: bool = True
+
     # ── API 安全 ────────────────────────────────────────────────
     # 空字串 = server 啟動時自動生成，並寫進 .env.local 給前端 vite 讀
     api_local_token: str = ""
@@ -80,6 +84,9 @@ class Settings:
         def _csv(s: str) -> list[str]:
             return [x.strip() for x in s.split(",") if x.strip()]
 
+        def _bool(s: str) -> bool:
+            return s.strip().lower() in ("1", "true", "yes", "on")
+
         env_map = {
             "ollama_base_url": ("RAG_OLLAMA_BASE_URL", str),
             "llm_model": ("RAG_LLM_MODEL", str),
@@ -94,6 +101,7 @@ class Settings:
             "api_local_token": ("RAG_API_TOKEN", str),
             "api_allowed_origins": ("RAG_API_ALLOWED_ORIGINS", _csv),
             "allowed_data_roots": ("RAG_ALLOWED_DATA_ROOTS", _csv),
+            "constraint_filter_enabled": ("RAG_CONSTRAINT_FILTER", _bool),
         }
 
         kwargs = {}

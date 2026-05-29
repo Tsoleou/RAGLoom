@@ -50,6 +50,15 @@ from core.price_guard import (
     refusal_message as price_refusal_message,
 )
 from core.retrieval_judge import judge_retrieval
+from core.constraint_filter import (
+    ConstraintBlocked,
+    extract_constraints,
+    build_spec_table,
+    filter_results as constraint_filter_results,
+    filter_reference_rows,
+    any_product_matches,
+    refusal_message as constraint_refusal_message,
+)
 from core.critic import critique_answer, revise_answer
 from core.generator import GenerationResult
 from core.personas import get_preset
@@ -352,6 +361,58 @@ def execute_retrieval_judge(inputs: dict, params: dict) -> dict:
     return {
         "results_out": kept,
         "judge_trace": trace,
+        "_preview": json.dumps(preview_payload, ensure_ascii=False),
+    }
+
+
+def execute_constraint_filter(inputs: dict, params: dict) -> dict:
+    """Drop retrieved chunks (and reference rows) whose product violates a
+    numeric constraint extracted from the query. Deterministic, no LLM.
+
+    No-op (pass-through) when the query states no numeric constraint, or when
+    no reference table is wired (can't build a spec table → nothing to compare).
+    """
+    query = inputs.get("query", "") or ""
+    candidates = inputs.get("results_in") or []
+    reference_data = inputs.get("reference_in", "") or ""
+    format_hint = inputs.get("format_hint")
+
+    constraints = extract_constraints(query)
+    if not constraints:
+        preview = json.dumps({"__constraint": True, "constraints": [], "note": "no numeric constraint"})
+        return {"results_out": candidates, "reference_out": reference_data, "_preview": preview}
+
+    spec_table = build_spec_table(reference_data)
+
+    # Catalog-scoped "no match" check: refuse only when NO product in the whole
+    # catalog satisfies the constraint. The message claims "we have none", so the
+    # check must be catalog-wide — a retrieval-scoped check would falsely refuse
+    # when retrieval merely missed the qualifying product. Don't hand the
+    # generator a product-less context either way (4B invents a fake product).
+    if not any_product_matches(constraints, spec_table):
+        descs = ", ".join(c.describe() for c in constraints)
+        print(f"[Executor:ConstraintFilter] BLOCKED — no product matches {descs}")
+        raise ConstraintBlocked(
+            reason=f"No product matches {descs}",
+            refusal_message=constraint_refusal_message(query, format_hint=format_hint),
+            matched_keyword=f"{descs} (no match)",
+        )
+
+    kept, trace = constraint_filter_results(candidates, constraints, spec_table)
+    filtered_ref = filter_reference_rows(reference_data, constraints, spec_table)
+
+    preview_payload = {
+        "__constraint": True,
+        "constraints": [c.describe() for c in constraints],
+        "kept": len(kept),
+        "total": len(candidates),
+        "trace": trace,
+    }
+    print(f"[Executor:ConstraintFilter] {[c.describe() for c in constraints]} "
+          f"→ kept {len(kept)}/{len(candidates)} chunks")
+    return {
+        "results_out": kept,
+        "reference_out": filtered_ref,
         "_preview": json.dumps(preview_payload, ensure_ascii=False),
     }
 
@@ -892,6 +953,7 @@ EXECUTORS: dict[str, callable] = {
     "price_guard": execute_price_guard,
     "scope_gate": execute_scope_gate,
     "retrieval_judge": execute_retrieval_judge,
+    "constraint_filter": execute_constraint_filter,
     "product_selector": execute_product_selector,
     "retriever": execute_retriever,
     "prompt_builder": execute_prompt_builder,

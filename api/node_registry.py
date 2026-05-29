@@ -269,6 +269,36 @@ _register(NodeType(
 ))
 
 
+# --- Constraint Filter ---
+_register(NodeType(
+    type_id="constraint_filter",
+    label="Constraint Filter",
+    label_en="ConstraintFilter",
+    description=(
+        "Enforce numeric spec constraints from the query in code (no LLM). A regex "
+        "extracts a constraint like 'weight < 1kg' (deterministic, no hallucination), "
+        "then each candidate's product_id is resolved to its canonical spec from the "
+        "reference table and violators are dropped. Both the retrieved chunks AND the "
+        "reference rows are filtered, so a violating product can't slip back in via "
+        "the always-on reference block. Needed because small models can't reliably "
+        "compare numbers (they'll recommend a 1.8kg laptop for 'under 1kg'). No-op "
+        "when the query states no numeric constraint. v1 supports weight."
+    ),
+    category="query",
+    inputs=[
+        Port("query", "query", "Query Text"),
+        Port("results_in", "results", "RetrievalResults"),
+        Port("reference_in", "reference", "Reference Data"),
+        Port("format_hint", "format_hint", "Format Hint"),
+    ],
+    outputs=[
+        Port("results_out", "results", "RetrievalResults"),
+        Port("reference_out", "reference", "Reference Data"),
+    ],
+    params=[],
+))
+
+
 # --- Product Selector ---
 _register(NodeType(
     type_id="product_selector",

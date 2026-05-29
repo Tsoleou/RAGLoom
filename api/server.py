@@ -84,11 +84,13 @@ def _default_chat_graph() -> dict:
         {"id": "scopegate",  "type": "scope_gate",       "position": {"x": QO + GAP_X * 4, "y": Y_QUERY},
          "params": {"mode": "semantic", "margin_threshold": 0.0, "min_score": 0.7,
                     "embedding_model": "nomic-embed-text"}},
-        {"id": "pbuilder",   "type": "prompt_builder",   "position": {"x": QO + GAP_X * 5, "y": Y_QUERY},
+        {"id": "cfilter",    "type": "constraint_filter","position": {"x": QO + GAP_X * 5, "y": Y_QUERY},
+         "params": {}},
+        {"id": "pbuilder",   "type": "prompt_builder",   "position": {"x": QO + GAP_X * 6, "y": Y_QUERY},
          "params": {"glossary": ""}},
-        {"id": "generator",  "type": "generator",        "position": {"x": QO + GAP_X * 6, "y": Y_QUERY},
+        {"id": "generator",  "type": "generator",        "position": {"x": QO + GAP_X * 7, "y": Y_QUERY},
          "params": {"model": "gemma3:4b", "format_type": ""}},
-        {"id": "critic",     "type": "output_critic",    "position": {"x": QO + GAP_X * 7, "y": Y_QUERY},
+        {"id": "critic",     "type": "output_critic",    "position": {"x": QO + GAP_X * 8, "y": Y_QUERY},
          "params": {
              "criteria": (
                  "Do not mention competitor brand names like Asus, Acer, MSI, HP, Dell, or Apple.\n"
@@ -99,7 +101,7 @@ def _default_chat_graph() -> dict:
              "mode": "audit",
              "model": "gemma3:4b",
          }},
-        {"id": "display",    "type": "result_display",   "position": {"x": QO + GAP_X * 8, "y": Y_QUERY},
+        {"id": "display",    "type": "result_display",   "position": {"x": QO + GAP_X * 9, "y": Y_QUERY},
          "params": {}},
     ])
 
@@ -115,7 +117,7 @@ def _default_chat_graph() -> dict:
          }, ensure_ascii=False, indent=2)}},
         {"id": "refloader",  "type": "reference_loader", "position": {"x": QO + GAP_X * 5, "y": Y_AUX},
          "params": {"source_path": "./knowledge_base/_reference"}},
-        {"id": "sysprompt",  "type": "system_prompt",    "position": {"x": QO + GAP_X * 6, "y": Y_AUX},
+        {"id": "sysprompt",  "type": "system_prompt",    "position": {"x": QO + GAP_X * 7, "y": Y_AUX},
          "params": {"preset": "professional", "text": ""}},
     ])
 
@@ -141,9 +143,16 @@ def _default_chat_graph() -> dict:
         {"source": "retriever",  "target": "rerank",     "sourceHandle": "results",        "targetHandle": "results_in"},
         {"source": "priceguard", "target": "scopegate",  "sourceHandle": "query_out",      "targetHandle": "query"},
         {"source": "rerank",     "target": "scopegate",  "sourceHandle": "results_out",    "targetHandle": "results_in"},
+        # Constraint filter — numeric spec gate (e.g. "under 1kg") between scope_gate
+        # and prompt_builder. Filters BOTH the retrieved chunks and the reference rows,
+        # so a violating product can't slip back via the always-on reference block.
+        # Downstream (pbuilder + critic) now reads cfilter's outputs = the final set.
+        {"source": "priceguard", "target": "cfilter",    "sourceHandle": "query_out",      "targetHandle": "query"},
+        {"source": "scopegate",  "target": "cfilter",    "sourceHandle": "results_out",    "targetHandle": "results_in"},
+        {"source": "refloader",  "target": "cfilter",    "sourceHandle": "reference_data", "targetHandle": "reference_in"},
         {"source": "priceguard", "target": "pbuilder",   "sourceHandle": "query_out",      "targetHandle": "query"},
-        {"source": "scopegate",  "target": "pbuilder",   "sourceHandle": "results_out",    "targetHandle": "results"},
-        {"source": "refloader",  "target": "pbuilder",   "sourceHandle": "reference_data", "targetHandle": "reference_data"},
+        {"source": "cfilter",    "target": "pbuilder",   "sourceHandle": "results_out",    "targetHandle": "results"},
+        {"source": "cfilter",    "target": "pbuilder",   "sourceHandle": "reference_out",  "targetHandle": "reference_data"},
         {"source": "pbuilder",   "target": "generator",  "sourceHandle": "prompt",         "targetHandle": "prompt"},
         # SystemPrompt fans persona + format hint into generator + gates
         {"source": "sysprompt",  "target": "generator",  "sourceHandle": "system_prompt",  "targetHandle": "system_prompt"},
@@ -151,11 +160,14 @@ def _default_chat_graph() -> dict:
         {"source": "sysprompt",  "target": "guardrail",  "sourceHandle": "format_hint",    "targetHandle": "format_hint"},
         {"source": "sysprompt",  "target": "priceguard", "sourceHandle": "format_hint",    "targetHandle": "format_hint"},
         {"source": "sysprompt",  "target": "scopegate",  "sourceHandle": "format_hint",    "targetHandle": "format_hint"},
-        # Critic grounded mode — see query + final filtered retrieval set + reference data
+        {"source": "sysprompt",  "target": "cfilter",    "sourceHandle": "format_hint",    "targetHandle": "format_hint"},
+        # Critic grounded mode — see query + final filtered retrieval set + reference data.
+        # Reads cfilter outputs (not scopegate/refloader) so it audits exactly what the
+        # generator saw after constraint filtering.
         {"source": "generator",  "target": "critic",     "sourceHandle": "answer",         "targetHandle": "answer_in"},
         {"source": "priceguard", "target": "critic",     "sourceHandle": "query_out",      "targetHandle": "query"},
-        {"source": "scopegate",  "target": "critic",     "sourceHandle": "results_out",    "targetHandle": "retrieval"},
-        {"source": "refloader",  "target": "critic",     "sourceHandle": "reference_data", "targetHandle": "reference_data"},
+        {"source": "cfilter",    "target": "critic",     "sourceHandle": "results_out",    "targetHandle": "retrieval"},
+        {"source": "cfilter",    "target": "critic",     "sourceHandle": "reference_out",  "targetHandle": "reference_data"},
         {"source": "critic",     "target": "display",    "sourceHandle": "answer_out",     "targetHandle": "answer"},
     ]
 

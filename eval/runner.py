@@ -21,6 +21,7 @@ from datetime import datetime
 from pathlib import Path
 
 from core.guardrail import check_query as guardrail_check
+from config.settings import Settings
 from core.pipeline import RAGPipeline
 
 from eval.judge import run_judge
@@ -212,7 +213,8 @@ def main():
         sys.exit(1)
 
     print(f"[Runner] Initializing pipeline...")
-    pipeline = RAGPipeline()
+    # from_env so env vars (e.g. RAG_CONSTRAINT_FILTER for A/B eval) take effect.
+    pipeline = RAGPipeline(Settings.from_env())
 
     if not args.skip_ingest:
         print(f"[Runner] Re-ingesting KB at {KB_PATH}...")
