@@ -240,8 +240,29 @@
       "question": "哪一台筆電重量不到 1 公斤？",
       "expected_product": "luminos_go_13",
       "expected_facts": [
-        "0.99"
+        "0.99",
+        "Luminos Go"
       ],
+      "expected_language": "Chinese",
+      "match_mode": "any"
+    },
+    {
+      "id": "constraint_impossible_zh",
+      "category": "concept_query",
+      "question": "有沒有不到 0.5 公斤的筆電？",
+      "expected_product": null,
+      "expected_blocked": true,
+      "expected_facts": [],
+      "expected_language": "Chinese",
+      "match_mode": "any"
+    },
+    {
+      "id": "constraint_satisfiable_zh",
+      "category": "concept_query",
+      "question": "有沒有不到 1.5 公斤的筆電？",
+      "expected_product": null,
+      "expected_blocked": false,
+      "expected_facts": [],
       "expected_language": "Chinese",
       "match_mode": "any"
     },
