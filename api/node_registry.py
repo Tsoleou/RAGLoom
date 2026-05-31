@@ -235,7 +235,7 @@ _register(NodeType(
             "textarea",
             "\n".join(DEFAULT_OFF_TOPIC_ANCHORS),
         ),
-        ParamDef("margin_threshold", "Margin Threshold (semantic mode)", "number", 0.0),
+        ParamDef("margin_threshold", "Margin Threshold (semantic mode)", "number", -0.25),
         ParamDef("min_score", "Min Retrieval Score (retrieval mode)", "number", 0.7),
         ParamDef("embedding_model", "Embedding Model (semantic mode)", "string", "nomic-embed-text"),
     ],

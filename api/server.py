@@ -82,7 +82,7 @@ def _default_chat_graph() -> dict:
         {"id": "rerank",     "type": "retrieval_judge",  "position": {"x": QO + GAP_X * 3, "y": Y_QUERY},
          "params": {"model": "gemma3:4b"}},
         {"id": "scopegate",  "type": "scope_gate",       "position": {"x": QO + GAP_X * 4, "y": Y_QUERY},
-         "params": {"mode": "semantic", "margin_threshold": 0.0, "min_score": 0.7,
+         "params": {"mode": "semantic", "margin_threshold": -0.25, "min_score": 0.7,
                     "embedding_model": "nomic-embed-text"}},
         {"id": "cfilter",    "type": "constraint_filter","position": {"x": QO + GAP_X * 5, "y": Y_QUERY},
          "params": {}},
