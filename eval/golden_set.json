@@ -267,6 +267,46 @@
       "match_mode": "any"
     },
     {
+      "id": "constraint_battery_zh",
+      "category": "concept_query",
+      "question": "哪一台筆電續航至少 22 小時？",
+      "expected_product": "luminos_go_13",
+      "expected_blocked": false,
+      "expected_facts": ["Luminos Go", "22"],
+      "expected_language": "Chinese",
+      "match_mode": "any"
+    },
+    {
+      "id": "constraint_storage_zh",
+      "category": "concept_query",
+      "question": "儲存空間有沒有 8TB 以上的筆電？",
+      "expected_product": null,
+      "expected_blocked": false,
+      "expected_facts": ["TitanBook WS2", "WS2"],
+      "expected_language": "Chinese",
+      "match_mode": "any"
+    },
+    {
+      "id": "constraint_ram_en",
+      "category": "concept_query",
+      "question": "Which laptops have at least 128GB of RAM?",
+      "expected_product": null,
+      "expected_blocked": false,
+      "expected_facts": ["VisionBook 17", "TitanBook WS2", "VisionBook", "TitanBook", "128"],
+      "expected_language": "English",
+      "match_mode": "any"
+    },
+    {
+      "id": "constraint_screen_impossible_zh",
+      "category": "concept_query",
+      "question": "有沒有螢幕 20 吋以上的筆電？",
+      "expected_product": null,
+      "expected_blocked": true,
+      "expected_facts": [],
+      "expected_language": "Chinese",
+      "match_mode": "any"
+    },
+    {
       "id": "concept_xeon_cpu_en",
       "category": "concept_query",
       "question": "Which laptop has a Xeon CPU?",
