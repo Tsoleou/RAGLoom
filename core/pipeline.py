@@ -57,7 +57,12 @@ class RAGPipeline:
         # Always-on reference data (product comparison tables, etc.)
         self._reference_data = load_reference_text("./knowledge_base/_reference")
         # Product spec table for constraint filtering — parsed once from the
-        # reference CSV (query-independent). Empty dict if no CSV / no weight col.
+        # reference CSV (query-independent). Empty dict if no CSV / no spec cols.
+        # NB: the chat-graph path (api/executors.execute_constraint_filter) rebuilds
+        # this per-call from its reference_in input. Both read the SAME source
+        # (knowledge_base/_reference); the only difference is timing (init-cached
+        # here vs per-call there). Not a divergence bug — if the CSV is edited live,
+        # the executor simply sees fresh data, which is the correct behavior.
         self._spec_table = build_spec_table(self._reference_data)
         # Cached at init to avoid scanning collection metadata on every query;
         # refreshed on ingest / reset since those are the only mutation paths.

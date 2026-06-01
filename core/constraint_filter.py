@@ -19,8 +19,9 @@ Constraint Filter — query 數值約束過濾（確定性，無 LLM）。
 - 單位唯一的 spec（weight=kg、screen=吋、battery=hr）：unit 本身就足以辨識。
 - RAM 與 storage 共用 GB/TB：必須靠 query 裡的鄰近名詞（記憶體 vs 硬碟/SSD）消歧；
   裸「32GB 以上」無名詞 → 歧義 → 不抽（保守，交給檢索，不誤判）。
-- v1 限制：一個 query 只抽「一個」約束（op 整句偵測一次，無法可靠分配給混合方向的
-  多 spec）。同方向多約束只會強制第一個匹配的 spec，其餘忽略（安全，不誤刪）。
+- v1 限制：一個 query 只抽「一個」約束（op 整句偵測一次）。混合方向的多約束
+  （如「螢幕≥16吋 + 電池≤5hr」）無法用單一 op 分配 → 偵測到 up+down 並存就回 []
+  （保守，交給檢索，不誤刪）。同方向多約束只會抽第一個匹配的 spec，其餘忽略。
 """
 
 from __future__ import annotations
@@ -93,6 +94,7 @@ class SpecDef:
     unit_factors: dict      # {單位字串: 乘到 canonical 的係數}
     spec_keywords: list     # query 裡用來「指認這個 spec」的詞（消歧用）
     needs_keyword: bool     # True = 必須出現 spec_keyword 才抽（GB 共用者用）
+    exclude_keywords: list = None  # query 含這些詞時不認領此 spec（避免子字串誤判）
 
 
 # 比較關鍵詞 → op。長詞優先（「不超過」先於「超過」、「不低於」先於「低於」）。
@@ -114,9 +116,13 @@ SPECS: dict[str, SpecDef] = {
         name="weight", canonical_unit="kg", csv_col="重量",
         unit_factors={
             "公斤": 1.0, "千克": 1.0, "kgs": 1.0, "kg": 1.0,
-            "公克": 0.001, "grams": 0.001, "gram": 0.001, "克": 0.001, "g": 0.001,
+            "公克": 0.001, "grams": 0.001, "gram": 0.001, "克": 0.001,
             "磅": 0.453592, "pounds": 0.453592, "pound": 0.453592, "lbs": 0.453592, "lb": 0.453592,
         },
+        # 刻意不收 bare "g"：它與容量「512G」(storage/ram 省略 B 的常見寫法) 相撞，
+        # 且 weight 掃描在前 → 「硬碟 512G 以下」會被誤抽成 weight 0.512kg → 假性
+        # 拒答。中文「克/公克」、英文「grams」仍可表達公克；裸英文「900g」→ no-op
+        # (catalog 最輕 0.99kg，本來就無解，無害)。
         spec_keywords=["重量", "重", "weight", "weigh"],
         needs_keyword=False,  # 質量單位唯一，unit 本身就足以辨識
     ),
@@ -137,6 +143,9 @@ SPECS: dict[str, SpecDef] = {
         unit_factors={"gb": 1.0, "g": 1.0, "tb": 1024.0},
         spec_keywords=["記憶體", "內存", "ram", "memory"],
         needs_keyword=True,  # GB 與 storage 共用 → 必須有 spec 詞消歧
+        # VRAM/顯卡記憶體 = 顯卡記憶體，不是系統 RAM（也不是我們支援的 spec）。
+        # 「ram」是「vram」子字串，不排除會把「VRAM 8GB 以上」誤抽成系統 ram。
+        exclude_keywords=["vram", "顯卡記憶體", "顯存", "顯卡"],
     ),
     "storage": SpecDef(
         name="storage", canonical_unit="GB", csv_col="儲存",
@@ -151,6 +160,9 @@ def _has_keyword(query_lower: str, keywords: list) -> bool:
     return any(kw.lower() in query_lower for kw in keywords)
 
 
+_OP_DIRECTION = {"lt": "down", "lte": "down", "gt": "up", "gte": "up"}
+
+
 def _detect_op(query: str) -> str | None:
     """掃描 query 找比較方向。長關鍵詞優先（'不超過' 先於 '超過'）。"""
     q = query.lower()
@@ -158,6 +170,23 @@ def _detect_op(query: str) -> str | None:
         if kw.lower() in q:
             return op
     return None
+
+
+def _has_opposite_directions(query: str) -> bool:
+    """True if the query carries BOTH an up- and a down-direction comparator
+    (e.g. 螢幕至少16吋 + 電池5小時以下) — an ambiguous mixed-direction request the
+    single-op extractor can't resolve, so we bail to []. Mirrors _detect_op's
+    longest-match-wins by CONSUMING each matched keyword before scanning the
+    rest, so a negated single comparator ('不超過' which contains '超過') counts
+    as one direction, not two."""
+    q = query.lower()
+    seen = set()
+    for kw, op in sorted(_OP_KEYWORDS, key=lambda x: len(x[0]), reverse=True):
+        kwl = kw.lower()
+        if kwl in q:
+            seen.add(_OP_DIRECTION[op])
+            q = q.replace(kwl, " ")  # 消化掉，避免短子字串（超過 ⊂ 不超過）被重複數
+    return "up" in seen and "down" in seen
 
 
 def _num_unit_match(query: str, spec: SpecDef):
@@ -181,6 +210,8 @@ def extract_constraints(query: str) -> list[Constraint]:
     """
     if not query or not query.strip():
         return []
+    if _has_opposite_directions(query):
+        return []  # 混合方向（螢幕≥16吋 + 電池≤5hr）→ 單一 op 無法分配 → 保守不過濾
     op = _detect_op(query)
     if op is None:
         return []  # 無比較詞（「1公斤的筆電」「16GB記憶體」）→ 保守不過濾
@@ -188,6 +219,8 @@ def extract_constraints(query: str) -> list[Constraint]:
     # 固定順序：unit 唯一的先試，GB 共用的後試（且需 keyword），避免裸 GB 誤命中。
     for spec_name in ("weight", "screen", "battery", "ram", "storage"):
         spec = SPECS[spec_name]
+        if spec.exclude_keywords and _has_keyword(q_lower, spec.exclude_keywords):
+            continue  # query 含排除詞（如 vram）→ 此 spec 不認領
         if spec.needs_keyword and not _has_keyword(q_lower, spec.spec_keywords):
             continue
         hit = _num_unit_match(query, spec)
