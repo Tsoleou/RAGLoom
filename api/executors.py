@@ -719,6 +719,27 @@ def execute_result_display(inputs: dict, params: dict) -> dict:
     }
 
 
+def execute_judge_trace_inspector(inputs: dict, params: dict) -> dict:
+    """Observation sink for the Retrieval Judge's verdict list.
+
+    `judge_trace` is the list of {i, keep, reason, source, score} dicts the
+    judge emits. We just package it for the node preview — the frontend renders
+    the per-chunk keep/drop breakdown. No output; nothing reads from this node.
+    """
+    trace = inputs.get("judge_trace")
+    if not trace:
+        return {"_preview": "(no judge trace — connect Retrieval Judge's judge_trace output)"}
+
+    kept = sum(1 for v in trace if v.get("keep"))
+    payload = {
+        "__judge_trace": True,
+        "kept": kept,
+        "total": len(trace),
+        "verdicts": trace,
+    }
+    return {"_preview": json.dumps(payload, ensure_ascii=False)}
+
+
 # ── Eval executors (Editor-only) ───────────────────────────────────
 
 def _parse_facts(raw: str) -> list[str]:
@@ -961,6 +982,7 @@ EXECUTORS: dict[str, callable] = {
     "generator": execute_generator,
     "output_critic": execute_output_critic,
     "result_display": execute_result_display,
+    "judge_trace_inspector": execute_judge_trace_inspector,
     "eval_case_loader": execute_eval_case_loader,
     "coverage_metric": execute_coverage_metric,
     "score_distribution_metric": execute_score_distribution_metric,

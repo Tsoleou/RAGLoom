@@ -1,4 +1,5 @@
 import { useCallback, useRef, useState, useEffect, useMemo } from "react";
+import type { CSSProperties } from "react";
 import {
   ReactFlow,
   Controls,
@@ -15,6 +16,7 @@ import {
 import "@xyflow/react/dist/style.css";
 
 import { EditableNode } from "./EditableNode";
+import { DataEdge } from "./DataEdge";
 import { NodePalette } from "./NodePalette";
 import { NodeConfigPanel } from "./NodeConfigPanel";
 import { ExecutionBar } from "./ExecutionBar";
@@ -35,6 +37,35 @@ import type {
 } from "../types/pipeline";
 
 const nodeTypes = { editable: EditableNode };
+const edgeTypes = { data: DataEdge };
+
+// ── Edge visual layering ───────────────────────────────────────
+//
+// The default graph has two broadcast hubs (query fanned to every gate,
+// format_hint/system_prompt fanned from SystemPrompt) that draw long lines
+// across the canvas. Painting every edge the same bold animated orange makes
+// the graph read as a tangle. So we split edges into two tiers:
+//   • primary data spine (documents→chunks→results→prompt→answer): bold,
+//     bright, animated — this is the flow the eye should follow.
+//   • context / control lines (query, format_hint, system_prompt, refs,
+//     product_id): thin, faint, static — present but recessive.
+const CONTEXT_DATA_TYPES = new Set([
+  "query",
+  "format_hint",
+  "system_prompt",
+  "reference_data",
+  "product_id",
+]);
+
+function edgeAppearance(dataType?: string): { style: CSSProperties; animated: boolean } {
+  if (dataType === "metric") {
+    return { style: { strokeWidth: 2, stroke: "#a070d0" }, animated: true };
+  }
+  if (dataType && CONTEXT_DATA_TYPES.has(dataType)) {
+    return { style: { strokeWidth: 1.5, stroke: "#7a6a55", opacity: 0.4 }, animated: false };
+  }
+  return { style: { strokeWidth: 2.5, stroke: "#e07830" }, animated: true };
+}
 
 let nodeIdCounter = 0;
 function nextNodeId() {
@@ -111,14 +142,29 @@ function materializeServerGraph(
     })
     .filter((n): n is FlowNode => n !== null);
 
-  const edges: FlowEdge[] = g.edges.map((se, i) => ({
-    id: `e-${se.source}-${se.target}-${i}`,
-    source: se.source,
-    target: se.target,
-    sourceHandle: se.sourceHandle,
-    targetHandle: se.targetHandle,
-    animated: true,
-  }));
+  // Resolve each edge's data-type from its source port so the DataEdge can
+  // surface it on hover (and metric edges keep their distinct color).
+  const typeIdById: Record<string, string> = {};
+  g.nodes.forEach((sn) => {
+    typeIdById[sn.id] = sn.type;
+  });
+
+  const edges: FlowEdge[] = g.edges.map((se, i) => {
+    const srcDef = byTypeId[typeIdById[se.source]];
+    const dataType = srcDef?.outputs.find((p) => p.name === se.sourceHandle)?.dataType;
+    const { style, animated } = edgeAppearance(dataType);
+    return {
+      id: `e-${se.source}-${se.target}-${i}`,
+      source: se.source,
+      target: se.target,
+      sourceHandle: se.sourceHandle,
+      targetHandle: se.targetHandle,
+      type: "data",
+      animated,
+      data: { dataType },
+      style,
+    };
+  });
 
   return { nodes, edges };
 }
@@ -239,19 +285,22 @@ export function FlowEditor() {
         console.warn("[FlowEditor] Invalid connection: port types don't match");
         return;
       }
-      // Color new edges by their source-port dataType so the eval family
-      // (metric edges) reads visually distinct from the rest of the graph.
+      // Style new edges by their source-port dataType so the primary data
+      // spine, context/control lines, and the eval (metric) family each read
+      // distinctly — same tiering as the materialized default graph.
       const sourceNode = nodes.find((n) => n.id === connection.source);
       const sourcePort = sourceNode?.data.outputs.find(
         (p: { name: string; dataType: string }) => p.name === connection.sourceHandle
       );
-      const stroke = sourcePort?.dataType === "metric" ? "#a070d0" : "#e07830";
+      const { style, animated } = edgeAppearance(sourcePort?.dataType);
       setEdges((eds) =>
         addEdge(
           {
             ...connection,
-            animated: true,
-            style: { strokeWidth: 2, stroke },
+            type: "data",
+            animated,
+            data: { dataType: sourcePort?.dataType },
+            style,
           },
           eds
         )
@@ -474,7 +523,7 @@ export function FlowEditor() {
       <NodePalette onDragStart={onDragStart} />
 
       {/* Center: Canvas + Toolbar */}
-      <div className="flex-1 flex flex-col">
+      <div className="flex-1 flex flex-col min-w-0">
         <ExecutionBar
           isRunning={isRunning}
           nodeCount={nodes.length}
@@ -494,11 +543,15 @@ export function FlowEditor() {
           onClose={() => setBatchEvalOpen(false)}
         />
 
-        <div className="flex-1 relative" ref={reactFlowWrapper}>
+        {/* Canvas + docked config panel share a row so the panel never
+            occludes nodes (it used to be an absolute overlay). */}
+        <div className="flex-1 flex min-h-0">
+        <div className="flex-1 relative min-w-0" ref={reactFlowWrapper}>
           <ReactFlow
             nodes={nodes}
             edges={edges}
             nodeTypes={nodeTypes}
+            edgeTypes={edgeTypes}
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}
             onConnect={onConnect}
@@ -510,6 +563,8 @@ export function FlowEditor() {
             onPaneClick={onPaneClick}
             onDragOver={onDragOver}
             onDrop={onDrop}
+            isValidConnection={(c) => isConnectionValid(c as Connection, nodes)}
+            connectionRadius={38}
             fitView
             fitViewOptions={{ padding: 0.3 }}
             nodesDraggable
@@ -541,15 +596,16 @@ export function FlowEditor() {
           <div className="absolute bottom-3 right-[220px] z-[5] pointer-events-none">
             <Avatar state={avatarState} message={avatarMessage} size={100} />
           </div>
+        </div>
 
-          {/* Right: Config Panel */}
-          <NodeConfigPanel
-            nodeId={selectedNodeId}
-            data={selectedNode?.data ?? null}
-            onParamChange={onParamChange}
-            onClose={() => setSelectedNodeId(null)}
-          />
-
+        {/* Right: Config Panel — docked column, renders nothing when no
+            node is selected so the canvas reclaims the full width. */}
+        <NodeConfigPanel
+          nodeId={selectedNodeId}
+          data={selectedNode?.data ?? null}
+          onParamChange={onParamChange}
+          onClose={() => setSelectedNodeId(null)}
+        />
         </div>
       </div>
     </div>

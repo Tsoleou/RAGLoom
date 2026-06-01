@@ -1,4 +1,7 @@
+import { useMemo, useState } from "react";
+import { Search } from "lucide-react";
 import { useNodeTypes } from "../hooks/useNodeTypes";
+import { NodeIcon } from "../utils/nodeIcons";
 import type { NodeTypeDef } from "../types/pipeline";
 
 const CATEGORY_LABELS: Record<string, string> = {
@@ -16,11 +19,24 @@ interface Props {
 
 export function NodePalette({ onDragStart }: Props) {
   const { nodeTypes, loading, error } = useNodeTypes();
-  const grouped = CATEGORY_ORDER.map((cat) => ({
-    category: cat,
-    label: CATEGORY_LABELS[cat] || cat,
-    nodes: nodeTypes.filter((d) => d.category === cat),
-  })).filter((g) => g.nodes.length > 0);
+  const [query, setQuery] = useState("");
+
+  const grouped = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    const matches = (d: NodeTypeDef) =>
+      !q ||
+      d.label.toLowerCase().includes(q) ||
+      d.labelEn.toLowerCase().includes(q) ||
+      d.description.toLowerCase().includes(q) ||
+      d.typeId.toLowerCase().includes(q);
+    return CATEGORY_ORDER.map((cat) => ({
+      category: cat,
+      label: CATEGORY_LABELS[cat] || cat,
+      nodes: nodeTypes.filter((d) => d.category === cat && matches(d)),
+    })).filter((g) => g.nodes.length > 0);
+  }, [nodeTypes, query]);
+
+  const noResults = !loading && !error && nodeTypes.length > 0 && grouped.length === 0;
 
   return (
     <div className="w-56 bg-[#202020] border-r border-[#2a2a2a] flex flex-col">
@@ -29,12 +45,29 @@ export function NodePalette({ onDragStart }: Props) {
         <p className="text-[10px] text-[#555] mt-0.5">Drag nodes to canvas</p>
       </div>
 
+      {/* Search */}
+      <div className="px-3 pt-3">
+        <div className="relative">
+          <Search className="w-3.5 h-3.5 text-[#555] absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+          <input
+            type="text"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search nodes…"
+            className="w-full text-xs bg-[#1a1a1a] border border-[#333] rounded pl-8 pr-2 py-1.5 text-[#c0c0c0] placeholder-[#555] focus:outline-none focus:border-[#e07830]"
+          />
+        </div>
+      </div>
+
       <div className="flex-1 overflow-y-auto p-3 space-y-4">
         {loading && (
           <div className="text-[10px] text-[#555] py-2">Loading node types…</div>
         )}
         {error && (
           <div className="text-[10px] text-[#f0a040] py-2">Failed to load: {error}</div>
+        )}
+        {noResults && (
+          <div className="text-[10px] text-[#555] py-2">No nodes match “{query}”.</div>
         )}
         {grouped.map((group) => (
           <div key={group.category}>
@@ -46,6 +79,7 @@ export function NodePalette({ onDragStart }: Props) {
                 <div
                   key={def.typeId}
                   draggable
+                  title={def.description}
                   onDragStart={(e) => {
                     e.dataTransfer.setData("application/rag-node-type", def.typeId);
                     e.dataTransfer.effectAllowed = "move";
@@ -57,16 +91,23 @@ export function NodePalette({ onDragStart }: Props) {
                     hover:border-[#e07830]/50 hover:bg-[#2a2a2a] transition-colors
                   "
                 >
-                  <div className="text-xs font-medium text-[#c0c0c0]">
-                    {def.label}
+                  <div className="flex items-center gap-2">
+                    <NodeIcon typeId={def.typeId} className="w-3.5 h-3.5 text-[#e07830] flex-shrink-0" />
+                    <div className="text-xs font-medium text-[#c0c0c0] truncate">
+                      {def.label}
+                    </div>
                   </div>
+                  {def.description && (
+                    <div className="text-[10px] text-[#666] mt-1 line-clamp-2 leading-snug">
+                      {def.description}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
           </div>
         ))}
       </div>
-
     </div>
   );
 }

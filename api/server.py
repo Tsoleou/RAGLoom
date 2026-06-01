@@ -98,7 +98,7 @@ def _default_chat_graph() -> dict:
                  "Do not invent technical specifications not present in the source material.\n"
                  'Do not use marketing buzzwords like "amazing", "revolutionary", "industry-leading", "best-in-class".'
              ),
-             "mode": "audit",
+             "mode": "revise",
              "model": "gemma3:4b",
          }},
         {"id": "display",    "type": "result_display",   "position": {"x": QO + GAP_X * 9, "y": Y_QUERY},

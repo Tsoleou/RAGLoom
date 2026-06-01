@@ -269,6 +269,27 @@ _register(NodeType(
 ))
 
 
+# --- Judge Trace Inspector ---
+_register(NodeType(
+    type_id="judge_trace_inspector",
+    label="Judge Trace Inspector",
+    label_en="JudgeTraceInspector",
+    description=(
+        "Observation-only sink for the Retrieval Judge's per-chunk verdicts. "
+        "Wire Retrieval Judge's 'judge_trace' output here to see, for every "
+        "candidate, whether it was kept or dropped and the one-line reason — "
+        "independently of the reranked results that flow downstream. Produces "
+        "no output; nothing reads from it."
+    ),
+    category="eval",
+    inputs=[
+        Port("judge_trace", "judge_trace", "Judge Trace"),
+    ],
+    outputs=[],
+    params=[],
+))
+
+
 # --- Constraint Filter ---
 _register(NodeType(
     type_id="constraint_filter",
@@ -460,7 +481,7 @@ _register(NodeType(
                 "Do not use marketing buzzwords like \"amazing\", \"revolutionary\", \"industry-leading\", \"best-in-class\"."
             ),
         ),
-        ParamDef("mode", "Mode", "select", "audit", options=["audit", "revise"]),
+        ParamDef("mode", "Mode", "select", "revise", options=["audit", "revise"]),
         ParamDef("model", "Model", "string", "gemma3:4b"),
     ],
 ))
