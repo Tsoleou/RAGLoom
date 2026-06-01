@@ -1,8 +1,30 @@
 import { useState } from "react";
 import { FlowEditor } from "./components/FlowEditor";
 import { ChatView } from "./components/ChatView";
+import { Avatar } from "./components/avatar/Avatar";
 
 type View = "editor" | "chat";
+
+// TEMP preview harness — reach via ?preview=avatar, no backend needed. Remove when done.
+export function AvatarPreview() {
+  const states = [
+    { state: "idle" as const, msg: "Ready when you are!" },
+    { state: "think" as const, msg: "Retriever..." },
+    { state: "talk" as const, msg: "Generator..." },
+    { state: "happy" as const, msg: "Feeling: cheerful" },
+    { state: "error" as const, msg: "Retriever failed" },
+  ];
+  return (
+    <div className="h-screen bg-[#1a1a1a] flex items-center justify-center gap-10 flex-wrap">
+      {states.map((s) => (
+        <div key={s.state} className="flex flex-col items-center gap-3">
+          <div className="text-xs text-[#888] font-mono uppercase tracking-widest">{s.state}</div>
+          <Avatar state={s.state} message={s.msg} size={140} />
+        </div>
+      ))}
+    </div>
+  );
+}
 
 function App() {
   const [view, setView] = useState<View>("editor");

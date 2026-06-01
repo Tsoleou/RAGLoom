@@ -1,14 +1,13 @@
 import { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Send, X, Database, ChevronDown, ChevronUp, Trash2 } from "lucide-react";
-import { RobotAvatar } from "./RobotAvatar";
+import { Avatar } from "./avatar/Avatar";
+import type { AvatarState } from "./avatar/types";
 import {
   parseChatbotOutput,
   emotionToAvatarState,
   getEmotionTheme,
 } from "../utils/chatbotOutput";
-
-type AvatarState = "idle" | "think" | "talk" | "happy" | "error";
 
 interface ChatMessage {
   role: "user" | "assistant";
@@ -285,7 +284,7 @@ export function ChatView() {
       {/* Left: Avatar + controls */}
       <aside className="w-64 border-r border-[#00ccaa]/10 bg-[#141414] p-4 flex flex-col gap-4">
         <div className="flex justify-center">
-          <RobotAvatar state={avatarState} message={avatarMessage} size={128} />
+          <Avatar state={avatarState} message={avatarMessage} size={128} />
         </div>
 
         <button

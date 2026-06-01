@@ -18,7 +18,7 @@ import { EditableNode } from "./EditableNode";
 import { NodePalette } from "./NodePalette";
 import { NodeConfigPanel } from "./NodeConfigPanel";
 import { ExecutionBar } from "./ExecutionBar";
-import { RobotAvatar } from "./RobotAvatar";
+import { Avatar } from "./avatar/Avatar";
 import { BatchEvalModal } from "./BatchEvalModal";
 import { useExecution } from "../hooks/useExecution";
 import { useNodeTypes } from "../hooks/useNodeTypes";
@@ -539,7 +539,7 @@ export function FlowEditor() {
 
           {/* Avatar — bottom-right, to the left of MiniMap */}
           <div className="absolute bottom-3 right-[220px] z-[5] pointer-events-none">
-            <RobotAvatar state={avatarState} message={avatarMessage} size={100} />
+            <Avatar state={avatarState} message={avatarMessage} size={100} />
           </div>
 
           {/* Right: Config Panel */}
