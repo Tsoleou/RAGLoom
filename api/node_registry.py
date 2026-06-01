@@ -282,7 +282,9 @@ _register(NodeType(
         "reference rows are filtered, so a violating product can't slip back in via "
         "the always-on reference block. Needed because small models can't reliably "
         "compare numbers (they'll recommend a 1.8kg laptop for 'under 1kg'). No-op "
-        "when the query states no numeric constraint. v1 supports weight."
+        "when the query states no numeric constraint. Supports weight (kg), screen "
+        "(inch), battery (hr), RAM (GB), and storage (GB/TB); RAM vs storage are "
+        "disambiguated by keyword since both use GB."
     ),
     category="query",
     inputs=[

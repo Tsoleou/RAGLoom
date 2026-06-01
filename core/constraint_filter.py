@@ -5,18 +5,22 @@ Constraint Filter — query 數值約束過濾（確定性，無 LLM）。
 所以「不到 1 公斤」這種約束無法靠任何 LLM 節點落實。
 
 設計（Exp2a Option A）= 三層全確定性：
-  L1 規格表：解析 reference CSV → {product_id: {weight: kg}}（query-independent）。
-  L2 抽取：regex 從 query 抽 Constraint(spec, op, value)。單位型別檢查讓「22 hours」
-     不會被誤抽成 weight=22kg（時間單位不在質量單位表 → 不匹配）。
+  L1 規格表：解析 reference CSV → {product_id: {spec: canonical_value}}（query-independent）。
+  L2 抽取：regex 從 query 抽 Constraint(spec, op, value)。單位型別檢查 = 每個 spec 只認
+     自己的單位（質量/吋/小時/GB），所以「22 小時」不會被誤抽成 weight=22kg。
   L3 過濾：每個候選用 product_id 查 L1 規格表比較，丟掉違反約束的。
      對 retrieved chunks 與 reference CSV 列都過濾（後者避免違反產品從 always-on
-     reference 那條路回到 prompt）。
+     reference 那條路回到 prompt）。L3 是 spec-agnostic，加 spec 不用動它。
 
 為什麼不用 LLM 抽取：定義域很窄（規格×比較×數字+單位），regex 失敗可審、不幻覺、
 可重現。延伸既有的 code-level enforcement 哲學（Guardrail / ScopeGate / PriceGuard）。
 
-v1 只支援 weight（單位唯一無歧義）。RAM/storage（共用 GB，需鄰近名詞消歧）、
-screen 待架構驗證後再擴。
+支援的 spec（表驅動，見 SPECS）：weight / ram / storage / screen / battery。
+- 單位唯一的 spec（weight=kg、screen=吋、battery=hr）：unit 本身就足以辨識。
+- RAM 與 storage 共用 GB/TB：必須靠 query 裡的鄰近名詞（記憶體 vs 硬碟/SSD）消歧；
+  裸「32GB 以上」無名詞 → 歧義 → 不抽（保守，交給檢索，不誤判）。
+- v1 限制：一個 query 只抽「一個」約束（op 整句偵測一次，無法可靠分配給混合方向的
+  多 spec）。同方向多約束只會強制第一個匹配的 spec，其餘忽略（安全，不誤刪）。
 """
 
 from __future__ import annotations
@@ -68,53 +72,83 @@ def refusal_message(query: str, format_hint=None) -> str:
 # ── 值物件 ──────────────────────────────────────────────────────────
 @dataclass
 class Constraint:
-    spec: str       # weight（v1 only）
+    spec: str       # weight | ram | storage | screen | battery
     op: str         # lt | lte | gt | gte
-    value: float    # canonical 單位：weight=kg
+    value: float    # canonical 單位（見 SPECS[spec].canonical_unit）
 
     def describe(self) -> str:
         sym = {"lt": "<", "lte": "<=", "gt": ">", "gte": ">="}.get(self.op, self.op)
-        unit = "kg" if self.spec == "weight" else ""
+        unit = SPECS[self.spec].canonical_unit if self.spec in SPECS else ""
         return f"{self.spec} {sym} {self.value}{unit}"
 
 
-# ── L2：regex 抽取 ──────────────────────────────────────────────────
+# ── Spec 表（spec 驅動的單一事實來源）──────────────────────────────
 #
-# 質量單位 → 轉成 kg 的係數。「單位型別檢查」就靠這張表：時間（hr/小時）、
-# 長度（吋/inch）不在裡面 → number+unit regex 不匹配 → 不會誤抽成 weight。
-_MASS_UNIT_FACTOR = {
-    "公斤": 1.0, "千克": 1.0, "kgs": 1.0, "kg": 1.0,
-    "公克": 0.001, "grams": 0.001, "gram": 0.001, "克": 0.001, "g": 0.001,
-    "磅": 0.453592, "pounds": 0.453592, "pound": 0.453592, "lbs": 0.453592, "lb": 0.453592,
-}
-# alternation 長的在前，避免「公克」被「克」搶、「kg」被「g」搶。
-_MASS_UNIT_ALT = "|".join(
-    sorted(_MASS_UNIT_FACTOR.keys(), key=len, reverse=True)
-)
-# 負向前瞻 (?![a-zA-Z]) 擋住 Latin 單位後接字母的誤匹配：否則 bare 'g'(0.001kg)
-# 會吃到「16GB」的 G，把 RAM 查詢誤抽成 weight。對 CJK 單位無影響（公斤後接「的」）。
-_NUM_MASS_RE = re.compile(
-    rf"(\d+(?:\.\d+)?)\s*({_MASS_UNIT_ALT})(?![a-zA-Z])",
-    re.IGNORECASE,
-)
+# 加一個 spec = 在 SPECS 加一筆，L1/L2/L3 都靠這張表運作，不用改邏輯。
+@dataclass
+class SpecDef:
+    name: str               # canonical spec 名
+    canonical_unit: str     # 顯示用單位
+    csv_col: str            # reference CSV 欄名
+    unit_factors: dict      # {單位字串: 乘到 canonical 的係數}
+    spec_keywords: list     # query 裡用來「指認這個 spec」的詞（消歧用）
+    needs_keyword: bool     # True = 必須出現 spec_keyword 才抽（GB 共用者用）
 
-# 比較關鍵詞 → op。掃描時長詞優先（「不超過」要先於「超過」、「不低於」先於「低於」），
-# 所以這裡用 list 並在比對時依長度排序。
+
+# 比較關鍵詞 → op。長詞優先（「不超過」先於「超過」、「不低於」先於「低於」）。
+# spec-agnostic：所有 spec 共用同一組方向詞。
 _OP_KEYWORDS: list[tuple[str, str]] = [
-    # lte（含上界）
     ("不超過", "lte"), ("不超出", "lte"), ("最多", "lte"), ("以內", "lte"),
     ("以下", "lte"), ("或以下", "lte"),
-    ("at most", "lte"), ("up to", "lte"), ("no more than", "lte"), ("no heavier than", "lte"),
-    # gte（含下界）
+    ("at most", "lte"), ("up to", "lte"), ("no more than", "lte"),
     ("不低於", "gte"), ("至少", "gte"), ("以上", "gte"), ("起跳", "gte"),
     ("at least", "gte"), ("minimum", "gte"),
-    # lt（嚴格小於）
     ("不到", "lt"), ("低於", "lt"), ("少於", "lt"), ("小於", "lt"), ("輕於", "lt"),
-    ("less than", "lt"), ("under", "lt"), ("below", "lt"), ("lighter than", "lt"),
-    # gt（嚴格大於）
+    ("less than", "lt"), ("under", "lt"), ("below", "lt"),
     ("超過", "gt"), ("大於", "gt"), ("多於", "gt"), ("重於", "gt"), ("高於", "gt"),
-    ("more than", "gt"), ("over", "gt"), ("above", "gt"), ("heavier than", "gt"),
+    ("more than", "gt"), ("over", "gt"), ("above", "gt"),
 ]
+
+SPECS: dict[str, SpecDef] = {
+    "weight": SpecDef(
+        name="weight", canonical_unit="kg", csv_col="重量",
+        unit_factors={
+            "公斤": 1.0, "千克": 1.0, "kgs": 1.0, "kg": 1.0,
+            "公克": 0.001, "grams": 0.001, "gram": 0.001, "克": 0.001, "g": 0.001,
+            "磅": 0.453592, "pounds": 0.453592, "pound": 0.453592, "lbs": 0.453592, "lb": 0.453592,
+        },
+        spec_keywords=["重量", "重", "weight", "weigh"],
+        needs_keyword=False,  # 質量單位唯一，unit 本身就足以辨識
+    ),
+    "screen": SpecDef(
+        name="screen", canonical_unit="吋", csv_col="螢幕尺寸",
+        unit_factors={"吋": 1.0, "inch": 1.0, "inches": 1.0, "\"": 1.0},
+        spec_keywords=["螢幕", "螢幕尺寸", "面板", "screen", "display"],
+        needs_keyword=False,  # 吋/inch 唯一
+    ),
+    "battery": SpecDef(
+        name="battery", canonical_unit="hr", csv_col="電池",
+        unit_factors={"小時": 1.0, "hr": 1.0, "hrs": 1.0, "hour": 1.0, "hours": 1.0, "h": 1.0},
+        spec_keywords=["續航", "電池", "battery", "battery life"],
+        needs_keyword=False,  # 時間單位唯一
+    ),
+    "ram": SpecDef(
+        name="ram", canonical_unit="GB", csv_col="RAM",
+        unit_factors={"gb": 1.0, "g": 1.0, "tb": 1024.0},
+        spec_keywords=["記憶體", "內存", "ram", "memory"],
+        needs_keyword=True,  # GB 與 storage 共用 → 必須有 spec 詞消歧
+    ),
+    "storage": SpecDef(
+        name="storage", canonical_unit="GB", csv_col="儲存",
+        unit_factors={"gb": 1.0, "g": 1.0, "tb": 1024.0, "t": 1024.0},
+        spec_keywords=["儲存", "存儲", "硬碟", "容量", "空間", "storage", "ssd", "disk", "drive"],
+        needs_keyword=True,  # GB 與 ram 共用 → 必須有 spec 詞消歧
+    ),
+}
+
+
+def _has_keyword(query_lower: str, keywords: list) -> bool:
+    return any(kw.lower() in query_lower for kw in keywords)
 
 
 def _detect_op(query: str) -> str | None:
@@ -126,35 +160,55 @@ def _detect_op(query: str) -> str | None:
     return None
 
 
-def extract_constraints(query: str) -> list[Constraint]:
-    """regex 抽取數值約束。v1：weight。
+def _num_unit_match(query: str, spec: SpecDef):
+    """在 query 找「數字 + 此 spec 的單位」。回 (value_canonical, unit_str) 或 None。
+    負向前瞻擋 Latin 單位後接字母（'16GB' 的 g 不被當 weight 的 g）。"""
+    alt = "|".join(sorted((re.escape(u) for u in spec.unit_factors), key=len, reverse=True))
+    pat = re.compile(rf"(\d+(?:\.\d+)?)\s*({alt})(?![a-zA-Z])", re.IGNORECASE)
+    m = pat.search(query)
+    if not m:
+        return None
+    factor = spec.unit_factors[m.group(2).lower()]
+    return float(m.group(1)) * factor, m.group(2)
 
-    需同時滿足：(1) query 含「數字+質量單位」 (2) 含比較關鍵詞。
-    缺任一 → 回 []（保守，不過濾）。時間/長度單位天生不匹配質量單位 → 自動排除。
+
+def extract_constraints(query: str) -> list[Constraint]:
+    """regex 抽取數值約束（spec 表驅動）。
+
+    一個 query 抽「一個」約束（op 整句偵測一次）。對每個 spec 依序試：
+    需同時 (1) 數字+該 spec 的單位 (2) 比較詞 (3) needs_keyword 者還要 spec 關鍵詞。
+    第一個滿足的 spec 勝出。全不滿足 → []（保守，不過濾）。
     """
     if not query or not query.strip():
         return []
-    m = _NUM_MASS_RE.search(query)
-    if not m:
-        return []  # 沒有「數字+質量單位」→ 無 weight 約束（22小時 / 16吋 / 純產品名都走這）
     op = _detect_op(query)
     if op is None:
-        return []  # 有重量數字但無比較詞（「1公斤的筆電」）→ 保守不過濾
-    value_kg = float(m.group(1)) * _MASS_UNIT_FACTOR[m.group(2).lower()]
-    return [Constraint(spec="weight", op=op, value=value_kg)]
+        return []  # 無比較詞（「1公斤的筆電」「16GB記憶體」）→ 保守不過濾
+    q_lower = query.lower()
+    # 固定順序：unit 唯一的先試，GB 共用的後試（且需 keyword），避免裸 GB 誤命中。
+    for spec_name in ("weight", "screen", "battery", "ram", "storage"):
+        spec = SPECS[spec_name]
+        if spec.needs_keyword and not _has_keyword(q_lower, spec.spec_keywords):
+            continue
+        hit = _num_unit_match(query, spec)
+        if hit is not None:
+            value, _ = hit
+            return [Constraint(spec=spec_name, op=op, value=value)]
+    return []
 
 
 # ── L1：從 reference CSV 建規格表 ───────────────────────────────────
-_CSV_WEIGHT_COL = "重量"
 _CSV_PID_COL = "product_id"
 
 
-def _parse_mass_cell(cell: str) -> float | None:
-    """CSV 重量欄『1.7kg』→ 1.7（canonical kg）。解析不出 → None。"""
-    m = _NUM_MASS_RE.search(cell or "")
+def _parse_spec_cell(cell: str, spec: SpecDef) -> float | None:
+    """CSV 欄值（如『1.7kg』『32GB LPDDR5』『14吋』『22hr』）→ canonical 數值。
+    解析不出 → None。CSV 值的單位用該 spec 自己的 unit_factors。"""
+    alt = "|".join(sorted((re.escape(u) for u in spec.unit_factors), key=len, reverse=True))
+    m = re.search(rf"(\d+(?:\.\d+)?)\s*({alt})(?![a-zA-Z])", cell or "", re.IGNORECASE)
     if not m:
         return None
-    return float(m.group(1)) * _MASS_UNIT_FACTOR[m.group(2).lower()]
+    return float(m.group(1)) * spec.unit_factors[m.group(2).lower()]
 
 
 def _csv_rows(reference_text: str) -> list[list[str]]:
@@ -169,24 +223,34 @@ def _csv_rows(reference_text: str) -> list[list[str]]:
 
 
 def build_spec_table(reference_text: str) -> dict[str, dict[str, float]]:
-    """解析 reference CSV → {product_id: {weight: kg}}。query-independent，init 建一次。"""
+    """解析 reference CSV → {product_id: {spec: canonical_value}}（所有 SPECS）。
+    query-independent，init 建一次。某 spec 欄不存在或某格解析不出 → 該 spec 略過
+    （產品仍會有其他成功解析的 spec）。"""
     rows = _csv_rows(reference_text)
     if len(rows) < 2:
         return {}
     header = rows[0]
     try:
         pid_i = header.index(_CSV_PID_COL)
-        w_i = header.index(_CSV_WEIGHT_COL)
     except ValueError:
         return {}
+    # 預先找出每個 spec 的欄位 index（缺欄就跳過該 spec）
+    col_idx = {name: header.index(s.csv_col) for name, s in SPECS.items() if s.csv_col in header}
     table: dict[str, dict[str, float]] = {}
     for row in rows[1:]:
-        if len(row) <= max(pid_i, w_i):
+        if len(row) <= pid_i:
             continue
         pid = row[pid_i].strip()
-        w = _parse_mass_cell(row[w_i])
-        if pid and w is not None:
-            table[pid] = {"weight": w}
+        if not pid:
+            continue
+        specs: dict[str, float] = {}
+        for name, ci in col_idx.items():
+            if ci < len(row):
+                val = _parse_spec_cell(row[ci], SPECS[name])
+                if val is not None:
+                    specs[name] = val
+        if specs:
+            table[pid] = specs
     return table
 
 
