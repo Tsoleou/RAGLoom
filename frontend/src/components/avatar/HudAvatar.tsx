@@ -46,7 +46,11 @@ export function HudAvatar({ state, message, size = 96 }: AvatarProps) {
   const stateRef = useRef<AvatarState>(state);
   const rafRef = useRef<number>(0);
 
-  stateRef.current = state;
+  // Keep the latest state readable inside the persistent rAF loop without
+  // restarting it. Synced in an effect (never written during render).
+  useEffect(() => {
+    stateRef.current = state;
+  }, [state]);
 
   // ── Draw the HUD core ─────────────────────────────────────
   const draw = useCallback((ctx: CanvasRenderingContext2D, W: number) => {

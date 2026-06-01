@@ -5,5 +5,5 @@
 //
 //   export { OrbAvatar as Avatar } from "./OrbAvatar";
 //
-export { HudAvatar as Avatar } from "./HudAvatar";
+export { SilkAvatar as Avatar } from "./SilkAvatar";
 export type { AvatarProps, AvatarState } from "./types";
