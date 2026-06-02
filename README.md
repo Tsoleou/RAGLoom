@@ -8,12 +8,13 @@ Built with Python, FastAPI, React, ChromaDB, and Ollama. No LangChain.
 
 ## Features
 
-- **Visual node editor** — drag-and-drop pipeline building with real-time per-node execution status pushed over WebSocket. Twenty-three node types across **ingest**, **query**, and **eval** categories — seventeen for the chat pipeline plus six retrieval-quality eval nodes.
+- **Visual node editor** — drag-and-drop pipeline building with real-time per-node execution status pushed over WebSocket. Twenty-four node types across **ingest**, **query**, and **eval** categories — seventeen for the chat pipeline plus seven retrieval-quality / inspection eval nodes.
 - **Safety Guardrail** — keyword-based pre-retrieval filter that blocks queries matching a configurable block list (e.g. competitor brand names) before they ever reach the LLM. In the node view, blocked queries short-circuit downstream nodes with an amber status ring.
 - **ScopeGate** — semantic-relevance check that compares the query embedding to on/off-topic anchor phrases living outside the knowledge base. Off-topic queries (pets, recipes, finance, etc.) short-circuit with a canned refusal — no LLM call, no fabricated catalog. Robust to bridge attacks like "is the dog like a laptop?" where retrieval scores alone can't distinguish on- vs off-topic.
 - **PriceGuard** — pre-retrieval pattern match for price-intent queries (`price`, `cost`, `MSRP`, `how much`, `售價`, `多少錢`, etc.) that short-circuits to a canned bilingual refusal. Mirrors `Guardrail` and `ScopeGate`: at small-model scale, "trust the model to follow instructions" is unreliable for high-stakes refusals — the policy is enforced in code instead.
+- **ConstraintFilter** — a deterministic, no-LLM numeric spec gate for queries like "under 1kg" or "battery over 20 hours". A small model can't reliably *compare* numbers (it will recommend a 1.8kg laptop for "under 1kg"), so the constraint is enforced in code: a regex extracts `spec / op / value`, each candidate's `product_id` is resolved to its canonical spec from the reference table, and violators are dropped — from both the retrieved chunks **and** the always-on reference rows, so a violating product can't slip back in via the reference block. Supports weight (kg), screen (inch), battery (hr), RAM (GB), and storage (GB/TB); RAM vs storage are disambiguated by nearby keyword since both use GB. If the constraint filters out *every* product, it short-circuits with a canned bilingual refusal (mirroring `Guardrail` / `ScopeGate` / `PriceGuard`) rather than handing the model an empty context to hallucinate over. No-op when the query states no numeric constraint.
 - **OutputCritic** — an optional second LLM pass that audits the generator's answer against a negative-rules list. `audit` mode labels violations; `revise` mode rewrites the offending answer.
-- **Persona presets** — the `SystemPrompt` node ships with `professional` and `chatbot` presets (plus free-form custom text), both tuned to a trade-show promoter register (2–4 sentences, lead with the hook). The `chatbot` preset emits structured JSON `{reply, emotion}` enforced by Ollama grammar-constrained decoding, which the UI smart-renders as an emotion badge plus a reply bubble with an animated avatar. Replies are always in the visitor's language.
+- **Persona presets** — the `SystemPrompt` node ships with `professional` and `chatbot` presets (plus free-form custom text), both tuned to a trade-show promoter register (2–4 sentences, lead with the hook). The `chatbot` preset emits structured JSON `{reply, emotion}` enforced by Ollama grammar-constrained decoding, which the UI smart-renders as an emotion badge plus a reply bubble with an animated avatar. The avatar is themeable — every theme implements one `AvatarProps` contract and the active theme is chosen at a single swap point (`frontend/src/components/avatar/Avatar.tsx`), so swapping the look is a one-line re-export; the default ships the `silk-flow` theme. Replies are always in the visitor's language.
 - **Always-on reference data** — the `ReferenceLoader` node loads a static reference file (e.g. a product comparison CSV) and injects it directly into every prompt, guaranteeing broad coverage for comparison queries independent of vector retrieval results.
 - **Metadata-filtered retrieval** — product documents are tagged with a `product_id` at ingest time (derived from filename). The `Retriever` node accepts a filter parameter to scope retrieval to a single product. The `ProductSelector` node, included in the default pipeline, classifies query intent in one of two modes — `rule` (fast string matching against the collection's `product_id`s, zero LLM latency) or `llm` (small LLM pass for ambiguous phrasing) — and feeds the filter automatically. Comparison or unrecognized queries fall through to broad search.
 - **Inline editing** — the `QueryInput` node lets you type the question directly on the node; no config panel round-trip.
@@ -45,13 +46,16 @@ Query:   Question
                             ScopeGate (semantic off-topic) ─ hit ─► canned refusal
                                       │
                                       ▼
+                            ConstraintFilter (numeric spec) ─ all dropped ─► canned refusal
+                                      │
+                                      ▼
                               PromptBuilder ──► Generator ──► OutputCritic ──► Answer
                                    ▲                 ▲
                             ReferenceLoader     SystemPrompt
                             (always-on ref)   (persona + format)
 ```
 
-Three pre-LLM guards — `Guardrail`, `PriceGuard`, `ScopeGate` — short-circuit with canned refusals before reaching the generator. Each fires on a different signal (competitor keywords / price intent / semantic off-topic) and they compose without overlap.
+Four code-level enforcement points — `Guardrail`, `PriceGuard`, `ScopeGate`, `ConstraintFilter` — short-circuit with canned refusals before reaching the generator. Each fires on a different signal (competitor keywords / price intent / semantic off-topic / no product satisfies a numeric constraint) and they compose without overlap. The first three are pre- or post-retrieval *gates*; `ConstraintFilter` also doubles as a per-candidate filter, only refusing when it empties the candidate set. The common thread: at small-model scale, "trust the model to follow instructions" is unreliable for high-stakes refusals and numeric comparison, so the policy lives in code.
 
 ### Core Modules
 
@@ -66,6 +70,7 @@ Three pre-LLM guards — `Guardrail`, `PriceGuard`, `ScopeGate` — short-circui
 | `core/guardrail.py` | Keyword-based query filter with word-boundary matching |
 | `core/scope_gate.py` | Semantic on/off-topic check via anchor embeddings (default mode) or retrieval-score threshold |
 | `core/price_guard.py` | Regex-based price-intent detector + canned bilingual refusal; short-circuits before retrieval |
+| `core/constraint_filter.py` | Deterministic numeric spec gate — regex extracts `spec/op/value`, resolves each candidate's `product_id` to its canonical spec, drops violators from retrieved chunks and reference rows; raises `ConstraintBlocked` (canned refusal) when every product is filtered out |
 | `core/prompt_builder.py` | Context assembly (RAG results + glossary + vision) |
 | `core/personas.py` | Persona presets (professional / chatbot / custom) |
 | `core/generator.py` | Calls Ollama LLM for answer generation |
@@ -74,6 +79,7 @@ Three pre-LLM guards — `Guardrail`, `PriceGuard`, `ScopeGate` — short-circui
 | `core/product_matcher.py` | Rule-based intent classifier — word-boundary regex match (CJK-aware via `re.ASCII`) against `product_id`s. Used by the chat pipeline and the `ProductSelector` node's `rule` mode for zero-latency point-query routing. |
 | `core/pipeline.py` | Orchestrates `ingest()` and `query()` for the chat interface |
 | `core/eval_metrics.py` | Pure-compute helpers for the Editor eval nodes — coverage / score distribution / diversity / facts coverage / batch aggregation. Mirrors `eval/scorer.py` algorithms so node and CLI eval give matching numbers. |
+| `core/path_guard.py` | Confines graph file-path params (`source_path`, `persist_path`, `golden_set_path`) to an allowlist of project roots |
 | `config/settings.py` | Dataclass-based config with `.env` override support |
 
 ## Interfaces
@@ -82,7 +88,7 @@ Three pre-LLM guards — `Guardrail`, `PriceGuard`, `ScopeGate` — short-circui
 
 ![Chat UI](doc/images/Chatview.png)
 
-**Node Editor** — for builders and operators. Drag-and-drop pipeline editor with twenty-three node types grouped into `ingest`, `query`, and `eval` categories — including `Guardrail`, `ScopeGate`, `RetrievalJudge`, `SystemPrompt`, `OutputCritic`, `ReferenceLoader`, `ProductSelector`, and the eval family (`EvalCaseLoader`, four metric nodes, `EvalReport`). Real-time per-node execution status over WebSocket. The `ResultDisplay` node smart-renders chatbot JSON into an emotion badge plus reply text. Profiles save/load full graphs, and a **Run Batch** button appears whenever the canvas contains an `EvalCaseLoader`, opening a scope selector + results modal that drives the [editor batch eval](#editor-batch-eval) endpoint.
+**Node Editor** — for builders and operators. Drag-and-drop pipeline editor with twenty-four node types grouped into `ingest`, `query`, and `eval` categories — including `Guardrail`, `ScopeGate`, `RetrievalJudge`, `ConstraintFilter`, `SystemPrompt`, `OutputCritic`, `ReferenceLoader`, `ProductSelector`, and the eval family (`EvalCaseLoader`, four metric nodes, `EvalReport`, and `JudgeTraceInspector` — an observation-only sink that surfaces the Retrieval Judge's per-chunk keep/drop verdicts). Real-time per-node execution status over WebSocket. The `ResultDisplay` node smart-renders chatbot JSON into an emotion badge plus reply text. Profiles save/load full graphs, and a **Run Batch** button appears whenever the canvas contains an `EvalCaseLoader`, opening a scope selector + results modal that drives the [editor batch eval](#editor-batch-eval) endpoint.
 
 ![Node Editor](doc/images/Editorview.png)
 
@@ -161,7 +167,7 @@ python -m eval.runner --category single_product_spec
 python -m eval.runner --case kb_miss_price_en      # single case (debug)
 ```
 
-Four deterministic dimensions: `language` (CJK detection vs expected), `retrieval` (expected `product_id` present in retrieved chunks), `faithfulness` (substring recall over `expected_facts` with `match_mode: all | any`), and `relevance` (heuristic — passes if faithfulness ≥ 0.5). Guard-blocked cases short-circuit: pass if `expected_blocked == actual_blocked` — the runner reads the pipeline's guard trace so refusals from any of the three guards (Guardrail / PriceGuard / ScopeGate) attribute correctly, not just the brand Guardrail. The set also includes `concept_query` cases that name no product, forcing real vector retrieval rather than the point-query hard-filter path. Each run writes a JSON report to `eval_results/`.
+Four deterministic dimensions: `language` (CJK detection vs expected), `retrieval` (expected `product_id` present in retrieved chunks), `faithfulness` (substring recall over `expected_facts` with `match_mode: all | any`), and `relevance` (heuristic — passes if faithfulness ≥ 0.5). Guard-blocked cases short-circuit: pass if `expected_blocked == actual_blocked` — the runner reads the pipeline's guard trace so refusals from any of the four guards (Guardrail / PriceGuard / ScopeGate / ConstraintFilter) attribute correctly, not just the brand Guardrail. The set also includes `concept_query` cases that name no product, forcing real vector retrieval rather than the point-query hard-filter path. Each run writes a JSON report to `eval_results/`.
 
 ### LLM-as-judge (optional second pass)
 
@@ -175,7 +181,7 @@ A second LLM call audits each answer against the retrieved chunks **and** the al
 
 The hallucination gate fires **only on the binary signal** — `passed = rule_pass AND hallucinated_claims == []`. Continuous scores (faithfulness 0.0–1.0, relevance 0.0–1.0) are reported in the JSON output but never veto pass/fail; same-commit reruns of a small model can drift float scores ±0.15 across runs, which would flicker a threshold gate. The `--no-hallucination-gate` flag preserves the judge output for calibration runs without flipping `passed`.
 
-Cases where the pipeline short-circuits (PriceGuard, ScopeGate, Guardrail) skip the judge — there is no retrieved context to audit a canned refusal against.
+Cases where the pipeline short-circuits (PriceGuard, ScopeGate, Guardrail, ConstraintFilter) skip the judge — there is no retrieved context to audit a canned refusal against.
 
 ### Editor batch eval
 
@@ -208,6 +214,7 @@ cp .env.example .env
 | `RAG_CHUNK_SIZE` | `500` | Chunk size in characters |
 | `RAG_CHUNK_OVERLAP` | `50` | Overlap between chunks |
 | `RAG_OUTPUT_MODE` | `professional` | Chat UI persona (`professional` / `chatbot`) |
+| `RAG_CONSTRAINT_FILTER` | `true` | Enable the numeric constraint filter (set `false` to A/B the unfiltered pipeline in eval) |
 | `RAG_API_TOKEN` | _(auto)_ | Local API token. Blank = auto-generated to `.env.local` on startup |
 | `RAG_API_ALLOWED_ORIGINS` | `http://localhost:5173,http://127.0.0.1:5173` | Comma-separated CORS allowlist |
 | `RAG_ALLOWED_DATA_ROOTS` | `./knowledge_base,./eval,./chroma_db` | Comma-separated roots that graph file-path params are confined to |
