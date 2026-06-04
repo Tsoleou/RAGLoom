@@ -467,6 +467,8 @@ _register(NodeType(
         Port("query", "query", "Query Text"),
         Port("retrieval", "results", "RetrievalResults"),
         Port("reference_data", "reference", "Reference Data"),
+        Port("system_prompt", "system_prompt", "System Prompt"),
+        Port("format_hint", "format_hint", "Format Hint"),
     ],
     outputs=[Port("answer_out", "answer", "Answer")],
     params=[

@@ -634,6 +634,82 @@ def _parse_chatbot_envelope(text: str) -> dict | None:
     return None
 
 
+# Generic English spec words that show up in product sheets but aren't a
+# product *identity* — excluded so they don't count as "the product" when
+# detecting whether a revise pass gutted the answer.
+_ANCHOR_STOPWORDS = {
+    "core", "cpu", "gpu", "ram", "ddr", "ssd", "wifi", "intel", "nvidia",
+    "amd", "geforce", "radeon", "display", "specs", "product", "sheet",
+    "internal", "comparison", "reference",
+}
+
+
+def _product_anchors(retrieval_results: list) -> set:
+    """Product-identity tokens derived from the retrieved chunks' filenames.
+
+    e.g. 'product_starforge_titan_9000.txt' -> {'starforge', 'titan'}. KB-agnostic:
+    a "product" is whatever retrieval surfaced, not a hardcoded brand list.
+    Digits, short tokens, and generic spec words are dropped.
+    """
+    anchors = set()
+    for r in retrieval_results:
+        chunk = getattr(r, "chunk", None)
+        fname = (chunk.metadata.get("filename", "") if chunk is not None else "") or ""
+        stem = fname.rsplit(".", 1)[0]
+        for tok in stem.replace("-", "_").split("_"):
+            t = tok.strip().lower()
+            if len(t) >= 4 and t.isalpha() and t not in _ANCHOR_STOPWORDS:
+                anchors.add(t)
+    return anchors
+
+
+def _lost_product(original: str, revised: str, anchors: set) -> bool:
+    """True if `original` named a retrieved product but `revised` named none —
+    i.e. the revise pass gutted the answer down to generic filler."""
+    if not anchors:
+        return False
+    o, rv = original.lower(), revised.lower()
+    return any(a in o for a in anchors) and not any(a in rv for a in anchors)
+
+
+def _regenerate_grounded(query, context_text, reference_data, persona_text,
+                         format_hint, model, base_url):
+    """Re-run the generator with a strict grounded instruction — the fallback
+    when a revise gutted the answer. Reuses core.generator.generate (no parallel
+    generation logic). Returns the new text, or None if empty."""
+    instruction = (
+        "Answer the user's question using ONLY the facts in the context and "
+        "reference below. Recommend the most suitable product(s) that appear "
+        "there, by name. Do NOT invent specs, model numbers, or products not "
+        "present. If the sources lack the detail asked for, say so plainly "
+        "instead of inventing. Reply in the user's language."
+    )
+    grounding = []
+    if context_text.strip():
+        grounding.append(f"[Context]\n{context_text.strip()}")
+    if reference_data.strip():
+        grounding.append(f"[Reference]\n{reference_data.strip()}")
+    system = "\n\n".join(p for p in (persona_text.strip(), instruction, "\n\n".join(grounding)) if p)
+    result = generate(
+        prompt={"system": system, "user": query},
+        model=model,
+        format_type=format_hint or "",
+        messages=[],
+        base_url=base_url,
+    )
+    return result.text or None
+
+
+def _safe_fallback_text(query: str) -> str:
+    """Honest canned line when revise + regenerate both fail — never serve an
+    unverified answer. Speaks the visitor's language (EN / ZH)."""
+    is_zh = any("一" <= ch <= "鿿" for ch in (query or ""))
+    if is_zh:
+        return "這個問題我手邊的資料不足以給你準確答案，建議直接洽詢現場人員以取得正確資訊。"
+    return ("I don't have enough verified information to answer that accurately — "
+            "please check with our staff for the correct details.")
+
+
 def execute_output_critic(inputs: dict, params: dict) -> dict:
     """Run a self-critique pass on the generator's answer.
 
@@ -656,11 +732,19 @@ def execute_output_critic(inputs: dict, params: dict) -> dict:
     settings = Settings()
 
     original_text = answer.text if hasattr(answer, "text") else str(answer)
+    # If the answer is a chatbot {"reply","emotion"} envelope, remember its
+    # emotion so every downstream rewrite (revise / regen / fallback) can keep it.
+    envelope = _parse_chatbot_envelope(original_text)
+    original_emotion = envelope["emotion"] if envelope else None
 
     # Optional grounded-mode inputs
     query = (inputs.get("query") or "") or ""
     retrieval_results = inputs.get("retrieval") or []
     reference_data = (inputs.get("reference_data") or "") or ""
+    # Optional — wired from a SystemPrompt node; absent on saved profiles /
+    # editor graphs without the edge, so default safely.
+    persona_text = inputs.get("system_prompt", "") or ""
+    format_hint = inputs.get("format_hint", "") or ""
     context_text = ""
     if retrieval_results:
         # Cap each chunk and the total to keep the prompt small.
@@ -689,38 +773,67 @@ def execute_output_critic(inputs: dict, params: dict) -> dict:
     )
 
     revised = False
+    regenerated = False
+    fell_back = False
     final_text = original_text
 
     if not verdict.passed and mode == "revise":
         print(f"[Executor:OutputCritic] FAIL → revising. Reason: {verdict.reason}")
-        # The generator may emit a chatbot envelope ({"reply","emotion"} JSON).
-        # revise_answer is told to output plain text, so handing it the raw JSON
-        # strips the shape. When the answer is an envelope, revise only the inner
-        # reply prose and re-wrap with the original emotion so the UI keeps it.
-        envelope = _parse_chatbot_envelope(original_text)
+        # Step 1 — revise. revise_answer emits plain text, so for a chatbot
+        # envelope we rewrite only the inner reply prose and re-wrap with the
+        # original emotion (else the envelope/emotion is lost).
         if envelope is not None:
             new_reply = revise_answer(
-                original_text=envelope["reply"],
-                criteria=criteria,
-                critique_reason=verdict.reason,
-                model=model,
+                original_text=envelope["reply"], criteria=criteria,
+                critique_reason=verdict.reason, model=model,
                 base_url=settings.ollama_base_url,
             )
-            final_text = json.dumps(
-                {"reply": new_reply, "emotion": envelope["emotion"]},
-                ensure_ascii=False,
-            )
+            final_text = json.dumps({"reply": new_reply, "emotion": original_emotion}, ensure_ascii=False)
         else:
             final_text = revise_answer(
-                original_text=original_text,
-                criteria=criteria,
-                critique_reason=verdict.reason,
-                model=model,
+                original_text=original_text, criteria=criteria,
+                critique_reason=verdict.reason, model=model,
                 base_url=settings.ollama_base_url,
             )
         revised = True
+
+        # Step 2 — if the revise gutted the answer (named a retrieved product
+        # before, none after), regenerate a grounded answer instead of serving
+        # generic filler.
+        anchors = _product_anchors(retrieval_results)
+        if _lost_product(original_text, final_text, anchors):
+            print(f"[Executor:OutputCritic] revise dropped all products {sorted(anchors)} → regenerating")
+            regen = _regenerate_grounded(
+                query, context_text, reference_data, persona_text,
+                format_hint, model, settings.ollama_base_url,
+            )
+            if regen:
+                # Step 3 — verify the regen. It uses the same model that just
+                # hallucinated, so an UNVERIFIED regen would be a hallucination
+                # bypass; re-run the same critique before trusting it.
+                regen_verdict = critique_answer(
+                    answer_text=regen, criteria=criteria, model=model,
+                    base_url=settings.ollama_base_url, query=query,
+                    context=context_text, reference=reference_data,
+                )
+                if regen_verdict.passed:
+                    final_text = regen
+                    regenerated = True
+                else:
+                    print(f"[Executor:OutputCritic] regen still fails ({regen_verdict.reason}) → safe fallback")
+                    final_text = _safe_fallback_text(query)
+                    fell_back = True
+            else:
+                final_text = _safe_fallback_text(query)
+                fell_back = True
     else:
         print(f"[Executor:OutputCritic] {'PASS' if verdict.passed else 'FAIL (audit only)'}: {verdict.reason} [grounded={grounded}]")
+
+    # Envelope guard: if the original was a chatbot envelope, ensure the final
+    # text still is one. A regen without a format_hint, or the canned fallback,
+    # would otherwise be plain text and the UI would lose the emotion.
+    if envelope is not None and _parse_chatbot_envelope(final_text) is None:
+        final_text = json.dumps({"reply": final_text, "emotion": original_emotion}, ensure_ascii=False)
 
     # Wrap the (possibly revised) text back into a GenerationResult
     new_answer = GenerationResult(
@@ -734,6 +847,8 @@ def execute_output_critic(inputs: dict, params: dict) -> dict:
         "verdict": "pass" if verdict.passed else "fail",
         "reason": verdict.reason,
         "revised": revised,
+        "regenerated": regenerated,
+        "fallback": fell_back,
         "mode": mode,
         "grounded": grounded,
     }

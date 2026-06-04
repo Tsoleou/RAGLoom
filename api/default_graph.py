@@ -136,6 +136,10 @@ def _default_chat_graph() -> dict:
         {"source": "sysprompt",  "target": "priceguard", "sourceHandle": "format_hint",    "targetHandle": "format_hint"},
         {"source": "sysprompt",  "target": "scopegate",  "sourceHandle": "format_hint",    "targetHandle": "format_hint"},
         {"source": "sysprompt",  "target": "cfilter",    "sourceHandle": "format_hint",    "targetHandle": "format_hint"},
+        # Critic also gets persona + format so a grounded regen (when a revise
+        # guts the answer) keeps the same voice and output shape.
+        {"source": "sysprompt",  "target": "critic",     "sourceHandle": "system_prompt",  "targetHandle": "system_prompt"},
+        {"source": "sysprompt",  "target": "critic",     "sourceHandle": "format_hint",    "targetHandle": "format_hint"},
         # Critic grounded mode — see query + final filtered retrieval set + reference data.
         # Reads cfilter outputs (not scopegate/refloader) so it audits exactly what the
         # generator saw after constraint filtering.
