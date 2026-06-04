@@ -609,6 +609,31 @@ def execute_generator(inputs: dict, params: dict) -> dict:
     }
 
 
+def _parse_chatbot_envelope(text: str) -> dict | None:
+    """If `text` is a chatbot {"reply", "emotion"} JSON envelope, return it; else None.
+
+    Mirrors the frontend's parseChatbotOutput so a revise pass can rewrite only
+    the inner reply prose and re-wrap with the original emotion — otherwise
+    revise_answer (told to emit plain text) would strip the envelope and the
+    UI would lose the avatar emotion. Brace-find tolerates leading/trailing
+    text around the JSON, same as the frontend's regex.
+    """
+    if not text:
+        return None
+    candidates = [text]
+    start, end = text.find("{"), text.rfind("}")
+    if 0 <= start < end:
+        candidates.append(text[start:end + 1])
+    for c in candidates:
+        try:
+            obj = json.loads(c)
+        except (ValueError, TypeError):
+            continue
+        if isinstance(obj, dict) and isinstance(obj.get("reply"), str) and isinstance(obj.get("emotion"), str):
+            return {"reply": obj["reply"], "emotion": obj["emotion"]}
+    return None
+
+
 def execute_output_critic(inputs: dict, params: dict) -> dict:
     """Run a self-critique pass on the generator's answer.
 
@@ -668,13 +693,31 @@ def execute_output_critic(inputs: dict, params: dict) -> dict:
 
     if not verdict.passed and mode == "revise":
         print(f"[Executor:OutputCritic] FAIL → revising. Reason: {verdict.reason}")
-        final_text = revise_answer(
-            original_text=original_text,
-            criteria=criteria,
-            critique_reason=verdict.reason,
-            model=model,
-            base_url=settings.ollama_base_url,
-        )
+        # The generator may emit a chatbot envelope ({"reply","emotion"} JSON).
+        # revise_answer is told to output plain text, so handing it the raw JSON
+        # strips the shape. When the answer is an envelope, revise only the inner
+        # reply prose and re-wrap with the original emotion so the UI keeps it.
+        envelope = _parse_chatbot_envelope(original_text)
+        if envelope is not None:
+            new_reply = revise_answer(
+                original_text=envelope["reply"],
+                criteria=criteria,
+                critique_reason=verdict.reason,
+                model=model,
+                base_url=settings.ollama_base_url,
+            )
+            final_text = json.dumps(
+                {"reply": new_reply, "emotion": envelope["emotion"]},
+                ensure_ascii=False,
+            )
+        else:
+            final_text = revise_answer(
+                original_text=original_text,
+                criteria=criteria,
+                critique_reason=verdict.reason,
+                model=model,
+                base_url=settings.ollama_base_url,
+            )
         revised = True
     else:
         print(f"[Executor:OutputCritic] {'PASS' if verdict.passed else 'FAIL (audit only)'}: {verdict.reason} [grounded={grounded}]")

@@ -136,6 +136,7 @@ def revise_answer(
     system = (
         "You are an editor. The previous answer violated quality rules. "
         "Rewrite it so it follows every rule below. Keep the factual content and tone intact. "
+        "Reply in the same language as the original answer. "
         "Output only the corrected answer in plain text — no preamble, no JSON, no markdown."
     )
     user = (

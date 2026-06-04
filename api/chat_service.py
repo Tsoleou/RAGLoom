@@ -129,12 +129,20 @@ def _extract_chat_response(
             break
 
     if not reply_text:
-        for n in nodes:
-            if n.get("type") == "generator":
-                ans = (outputs.get(n["id"]) or {}).get("answer")
-                if ans is not None and hasattr(ans, "text"):
-                    reply_text = ans.text or ""
-                    break
+        # Answer chain is generator → output_critic → result_display, so the
+        # critic's answer_out holds the (possibly revised) final text. Prefer it;
+        # fall back to the generator's raw answer when no critic is wired or it
+        # never ran. Without this, a successful revise is silently dropped and
+        # the user always sees the pre-critic answer.
+        for ntype, out_key in (("output_critic", "answer_out"), ("generator", "answer")):
+            for n in nodes:
+                if n.get("type") == ntype:
+                    ans = (outputs.get(n["id"]) or {}).get(out_key)
+                    if ans is not None and hasattr(ans, "text"):
+                        reply_text = ans.text or ""
+                        break
+            if reply_text:
+                break
 
     # Retrieval rows from the first retriever node that ran
     retrieval_rows: list[dict] = []
