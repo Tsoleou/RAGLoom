@@ -483,7 +483,7 @@ _register(NodeType(
                 "Do not use marketing buzzwords like \"amazing\", \"revolutionary\", \"industry-leading\", \"best-in-class\"."
             ),
         ),
-        ParamDef("mode", "Mode", "select", "revise", options=["audit", "revise"]),
+        ParamDef("mode", "Mode", "select", "revise", options=["audit", "revise", "revise+regen"]),
         ParamDef("model", "Model", "string", "gemma3:4b"),
     ],
 ))

@@ -777,8 +777,8 @@ def execute_output_critic(inputs: dict, params: dict) -> dict:
     fell_back = False
     final_text = original_text
 
-    if not verdict.passed and mode == "revise":
-        print(f"[Executor:OutputCritic] FAIL → revising. Reason: {verdict.reason}")
+    if not verdict.passed and mode in ("revise", "revise+regen"):
+        print(f"[Executor:OutputCritic] FAIL → revising ({mode}). Reason: {verdict.reason}")
         # Step 1 — revise. revise_answer emits plain text, so for a chatbot
         # envelope we rewrite only the inner reply prose and re-wrap with the
         # original emotion (else the envelope/emotion is lost).
@@ -797,35 +797,36 @@ def execute_output_critic(inputs: dict, params: dict) -> dict:
             )
         revised = True
 
-        # Step 2 — if the revise gutted the answer (named a retrieved product
-        # before, none after), regenerate a grounded answer instead of serving
-        # generic filler.
-        anchors = _product_anchors(retrieval_results)
-        if _lost_product(original_text, final_text, anchors):
-            print(f"[Executor:OutputCritic] revise dropped all products {sorted(anchors)} → regenerating")
-            regen = _regenerate_grounded(
-                query, context_text, reference_data, persona_text,
-                format_hint, model, settings.ollama_base_url,
-            )
-            if regen:
-                # Step 3 — verify the regen. It uses the same model that just
-                # hallucinated, so an UNVERIFIED regen would be a hallucination
-                # bypass; re-run the same critique before trusting it.
-                regen_verdict = critique_answer(
-                    answer_text=regen, criteria=criteria, model=model,
-                    base_url=settings.ollama_base_url, query=query,
-                    context=context_text, reference=reference_data,
+        # Step 2 — "revise+regen" only: if the revise gutted the answer (named
+        # a retrieved product before, none after), regenerate a grounded answer
+        # instead of serving generic filler. Plain "revise" stops at Step 1.
+        if mode == "revise+regen":
+            anchors = _product_anchors(retrieval_results)
+            if _lost_product(original_text, final_text, anchors):
+                print(f"[Executor:OutputCritic] revise dropped all products {sorted(anchors)} → regenerating")
+                regen = _regenerate_grounded(
+                    query, context_text, reference_data, persona_text,
+                    format_hint, model, settings.ollama_base_url,
                 )
-                if regen_verdict.passed:
-                    final_text = regen
-                    regenerated = True
+                if regen:
+                    # Step 3 — verify the regen. It uses the same model that just
+                    # hallucinated, so an UNVERIFIED regen would be a hallucination
+                    # bypass; re-run the same critique before trusting it.
+                    regen_verdict = critique_answer(
+                        answer_text=regen, criteria=criteria, model=model,
+                        base_url=settings.ollama_base_url, query=query,
+                        context=context_text, reference=reference_data,
+                    )
+                    if regen_verdict.passed:
+                        final_text = regen
+                        regenerated = True
+                    else:
+                        print(f"[Executor:OutputCritic] regen still fails ({regen_verdict.reason}) → safe fallback")
+                        final_text = _safe_fallback_text(query)
+                        fell_back = True
                 else:
-                    print(f"[Executor:OutputCritic] regen still fails ({regen_verdict.reason}) → safe fallback")
                     final_text = _safe_fallback_text(query)
                     fell_back = True
-            else:
-                final_text = _safe_fallback_text(query)
-                fell_back = True
     else:
         print(f"[Executor:OutputCritic] {'PASS' if verdict.passed else 'FAIL (audit only)'}: {verdict.reason} [grounded={grounded}]")
 
