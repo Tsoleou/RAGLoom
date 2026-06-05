@@ -1,4 +1,4 @@
-import { Handle, Position, useReactFlow } from "@xyflow/react";
+import { Handle, Position, useConnection, useReactFlow } from "@xyflow/react";
 import type { NodeProps } from "@xyflow/react";
 import type { CSSProperties } from "react";
 import type { EditableNodeData, FlowNode, PortDef } from "../types/pipeline";
@@ -38,11 +38,23 @@ const HANDLE_COLORS: Record<string, string> = {
   answer: "#e06040",
 };
 
+/** During a connection/rewire drag, each handle is one of:
+ *  - compatible: a valid drop target (opposite side + matching dataType) → glow
+ *  - incompatible: cannot receive this drag → dimmed
+ *  - none: no drag in progress → normal */
+type ConnState = "none" | "compatible" | "incompatible";
+
 /** Inline-relative handle so the connection dot sits on the card edge of the
  *  same row as its label — no more percentage-positioned dots drifting away
- *  from the IN/OUT text they belong to. */
-function handleStyle(dataType: string, side: "left" | "right"): CSSProperties {
-  return {
+ *  from the IN/OUT text they belong to. `connState` overlays drag-time
+ *  highlighting so the user sees where a connection can land. */
+function handleStyle(
+  dataType: string,
+  side: "left" | "right",
+  connState: ConnState = "none"
+): CSSProperties {
+  const color = HANDLE_COLORS[dataType] || "#555";
+  const base: CSSProperties = {
     position: "relative",
     transform: "none",
     top: "auto",
@@ -52,10 +64,18 @@ function handleStyle(dataType: string, side: "left" | "right"): CSSProperties {
     height: 12,
     minWidth: 12,
     flexShrink: 0,
-    background: HANDLE_COLORS[dataType] || "#555",
+    background: color,
     border: "2px solid #2a2a2a",
     [side === "left" ? "marginLeft" : "marginRight"]: -18,
+    transition: "box-shadow 0.1s, opacity 0.1s, transform 0.1s",
   };
+  if (connState === "compatible") {
+    return { ...base, transform: "scale(1.3)", boxShadow: `0 0 0 4px ${color}55`, zIndex: 10 };
+  }
+  if (connState === "incompatible") {
+    return { ...base, opacity: 0.2 };
+  }
+  return base;
 }
 
 export function EditableNode({
@@ -63,7 +83,33 @@ export function EditableNode({
   data,
   selected,
 }: NodeProps & { data: EditableNodeData }) {
-  const { setNodes } = useReactFlow<FlowNode>();
+  const { setNodes, getNode } = useReactFlow<FlowNode>();
+
+  // Drag-time guidance: resolve the dataType + side of the connection's fixed
+  // end (fromHandle) so each handle can flag itself compatible / incompatible.
+  // Mirrors isConnectionValid in FlowEditor (opposite side + matching dataType).
+  const connection = useConnection();
+  let dragFromSide: "source" | "target" | null = null;
+  let dragDataType: string | null = null;
+  if (connection.inProgress && connection.fromHandle) {
+    const fromNode = getNode(connection.fromHandle.nodeId);
+    if (fromNode) {
+      dragFromSide = connection.fromHandle.type;
+      const ports =
+        connection.fromHandle.type === "source"
+          ? fromNode.data.outputs
+          : fromNode.data.inputs;
+      dragDataType =
+        ports.find((p) => p.name === connection.fromHandle?.id)?.dataType ?? null;
+    }
+  }
+  const connStateFor = (portSide: "source" | "target", portDataType: string): ConnState => {
+    if (!dragFromSide || dragDataType === null) return "none";
+    return portSide !== dragFromSide && portDataType === dragDataType
+      ? "compatible"
+      : "incompatible";
+  };
+
   const style = STATUS_STYLES[data.status] || STATUS_STYLES.idle;
   const isResultDisplay = data.typeId === "result_display";
   const isOutputCritic = data.typeId === "output_critic";
@@ -136,7 +182,7 @@ export function EditableNode({
                 type="target"
                 position={Position.Left}
                 id={port.name}
-                style={handleStyle(port.dataType, "left")}
+                style={handleStyle(port.dataType, "left", connStateFor("target", port.dataType))}
                 title={`${port.label} (${port.dataType})`}
               />
               {renderPortLabel(port)}
@@ -152,7 +198,7 @@ export function EditableNode({
                 type="source"
                 position={Position.Right}
                 id={port.name}
-                style={handleStyle(port.dataType, "right")}
+                style={handleStyle(port.dataType, "right", connStateFor("source", port.dataType))}
                 title={`${port.label} (${port.dataType})`}
               />
             </div>

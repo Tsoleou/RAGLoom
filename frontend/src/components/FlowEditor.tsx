@@ -189,6 +189,26 @@ function isConnectionValid(
   return sourcePort.dataType === targetPort.dataType;
 }
 
+/** Enforce one source per input port. The backend resolves each input by
+ *  `inputs[targetHandle] = ...` (api/engine.py), so a second edge into the same
+ *  input port silently overwrites the first at run time. Mirror that on the
+ *  canvas: drop any edge already landing on (target, targetHandle) so a connect
+ *  / rewire replaces rather than stacks. `keepId` spares the edge being
+ *  reconnected onto its own handle. Output (source) ports are untouched —
+ *  fan-out (one output → many inputs) is legitimate. */
+function pruneTargetHandle(
+  edges: FlowEdge[],
+  target: string | null,
+  targetHandle: string | null | undefined,
+  keepId?: string,
+): FlowEdge[] {
+  return edges.filter(
+    (e) =>
+      e.id === keepId ||
+      !(e.target === target && (e.targetHandle ?? "") === (targetHandle ?? "")),
+  );
+}
+
 export function FlowEditor() {
   // Canvas starts empty; populated from /api/default-graph below.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -293,6 +313,7 @@ export function FlowEditor() {
         (p: { name: string; dataType: string }) => p.name === connection.sourceHandle
       );
       const { style, animated } = edgeAppearance(sourcePort?.dataType);
+      // Replace any edge already on this input port (single-source rule).
       setEdges((eds) =>
         addEdge(
           {
@@ -302,7 +323,7 @@ export function FlowEditor() {
             data: { dataType: sourcePort?.dataType },
             style,
           },
-          eds
+          pruneTargetHandle(eds, connection.target, connection.targetHandle)
         )
       );
     },
@@ -325,7 +346,34 @@ export function FlowEditor() {
         return;
       }
       edgeReconnectSuccessful.current = true;
-      setEdges((els) => reconnectEdge(oldEdge, newConnection, els));
+      // Recompute the edge's appearance + data-type from the NEW source port so
+      // a rewired edge reflects the data flow it now carries — not the stale
+      // styling/label inherited from the old endpoint. reconnectEdge keeps the
+      // same edge id, so we re-style that one edge in place afterwards.
+      const sourceNode = nodes.find((n) => n.id === newConnection.source);
+      const sourcePort = sourceNode?.data.outputs.find(
+        (p: { name: string; dataType: string }) => p.name === newConnection.sourceHandle
+      );
+      const { style, animated } = edgeAppearance(sourcePort?.dataType);
+      // shouldReplaceId:false keeps the edge's id stable across the reconnect —
+      // reconnectEdge otherwise mints a fresh id from the new connection, which
+      // would make the restyle .map below match nothing and silently no-op.
+      // Drop any *other* edge already on the new target handle before the
+      // reconnect, so rewiring onto an occupied input replaces it (single
+      // source per input port) — keepId spares the edge being dragged.
+      setEdges((els) => {
+        const pruned = pruneTargetHandle(
+          els,
+          newConnection.target,
+          newConnection.targetHandle,
+          oldEdge.id
+        );
+        return reconnectEdge(oldEdge, newConnection, pruned, { shouldReplaceId: false }).map((e) =>
+          e.id === oldEdge.id
+            ? { ...e, type: "data", animated, data: { ...e.data, dataType: sourcePort?.dataType }, style }
+            : e
+        );
+      });
     },
     [nodes, setEdges]
   );
@@ -565,6 +613,7 @@ export function FlowEditor() {
             onDrop={onDrop}
             isValidConnection={(c) => isConnectionValid(c as Connection, nodes)}
             connectionRadius={38}
+            elevateEdgesOnSelect
             fitView
             fitViewOptions={{ padding: 0.3 }}
             nodesDraggable

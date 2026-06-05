@@ -59,3 +59,28 @@ html, body, #root {
 .react-flow__attribution {
   display: none !important;
 }
+
+/* ── Rewire affordances ────────────────────────────────────────── */
+
+/* Selected edge → gold. The blanket `.react-flow__edge-path` rules above force
+   every path to #555 / #e07830 with !important, which would swallow the inline
+   gold DataEdge sets on the selected edge. Same-specificity + later source
+   order + !important lets this win, so a clicked edge actually reads gold. */
+.react-flow__edge.selected .react-flow__edge-path {
+  stroke: #ffcf5c !important;
+}
+
+/* Reconnect endpoints: grab cursor always, plus a visible knob at each end once
+   the edge is hovered or selected, so dragging an endpoint to rewire is
+   discoverable instead of trial-and-error. */
+.react-flow__edgeupdater {
+  cursor: grab;
+}
+.react-flow__edge:hover .react-flow__edgeupdater,
+.react-flow__edge.selected .react-flow__edgeupdater {
+  r: 5;
+  fill: #ffcf5c;
+  fill-opacity: 0.85;
+  stroke: #2a2a2a;
+  stroke-width: 1.5;
+}
