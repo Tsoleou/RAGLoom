@@ -90,6 +90,8 @@ Four code-level enforcement points — `Guardrail`, `PriceGuard`, `ScopeGate`, `
 
 **Node Editor** — for builders and operators. Drag-and-drop pipeline editor with twenty-four node types grouped into `ingest`, `query`, and `eval` categories — including `Guardrail`, `ScopeGate`, `RetrievalJudge`, `ConstraintFilter`, `SystemPrompt`, `OutputCritic`, `ReferenceLoader`, `ProductSelector`, and the eval family (`EvalCaseLoader`, four metric nodes, `EvalReport`, and `JudgeTraceInspector` — an observation-only sink that surfaces the Retrieval Judge's per-chunk keep/drop verdicts). Real-time per-node execution status over WebSocket. The `ResultDisplay` node smart-renders chatbot JSON into an emotion badge plus reply text. Profiles save/load full graphs, and a **Run Batch** button appears whenever the canvas contains an `EvalCaseLoader`, opening a scope selector + results modal that drives the [editor batch eval](#editor-batch-eval) endpoint.
 
+Connections are first-class to edit: hover an edge for a one-click **×** to remove it, click it to highlight (gold, floated above the tangle) so you can trace where it runs, and drag either endpoint to rewire. While dragging, compatible target handles glow and incompatible ones dim, and each **input port holds a single source** — rewiring onto an occupied input replaces the existing edge rather than stacking, matching the engine's one-value-per-input resolution so the canvas can't show a data flow the backend won't run.
+
 ![Node Editor](doc/images/Editorview.png)
 
 When a Guardrail keyword match blocks a query, downstream nodes short-circuit visibly across the graph — a PM can point at the safety layer mid-demo:
