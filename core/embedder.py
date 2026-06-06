@@ -5,9 +5,45 @@ Embedding 向量化模組。
 """
 
 import requests
-from typing import List
+from typing import List, Tuple
 
 from core.chunker import Chunk
+
+
+# Per-model retrieval prompts. Ollama's /api/embeddings sends the input
+# verbatim (TEMPLATE is bare `{{ .Prompt }}` for these models — verified), so
+# the documented doc/query prefixes are NOT applied automatically. Both
+# EmbeddingGemma and Qwen3-Embedding are trained with an asymmetric prompt
+# (document side vs query side); skipping it measurably degrades retrieval
+# (cos(raw, prefixed) ≈ 0.89 / 0.93). nomic-embed-text is left raw on purpose
+# so the baseline stays comparable to prior eval history.
+#   key: model name prefix → (doc_prefix, query_prefix)
+_RETRIEVAL_PREFIXES: dict[str, Tuple[str, str]] = {
+    # Google EmbeddingGemma — https://ai.google.dev/gemma/docs/embeddinggemma
+    "embeddinggemma": (
+        "title: none | text: ",
+        "task: search result | query: ",
+    ),
+    # Qwen3-Embedding — doc side raw, query side carries an Instruct preamble.
+    "qwen3-embedding": (
+        "",
+        "Instruct: Given a search query, retrieve relevant passages that answer the query\nQuery: ",
+    ),
+}
+
+
+def _prefixes_for(model: str) -> Tuple[str, str]:
+    """Return (doc_prefix, query_prefix) for an embedding model.
+
+    Matched by name prefix (case-insensitive) so size-tagged variants
+    (e.g. qwen3-embedding:0.6b) and capitalised ids (e.g. EmbeddingGemma)
+    resolve correctly. Unknown models get no prefix (raw text).
+    """
+    model_lc = model.lower()
+    for name, prefixes in _RETRIEVAL_PREFIXES.items():
+        if model_lc.startswith(name):
+            return prefixes
+    return "", ""
 
 
 def embed_chunks(
@@ -27,9 +63,10 @@ def embed_chunks(
     """
     embeddings = []
     url = f"{base_url}/api/embeddings"
+    doc_prefix, _ = _prefixes_for(model)
 
     for i, chunk in enumerate(chunks):
-        vector = _call_embedding_api(url, model, chunk.text)
+        vector = _call_embedding_api(url, model, doc_prefix + chunk.text)
         embeddings.append(vector)
 
     print(f"[Embedder] Embedded {len(embeddings)} chunks (model={model}, dim={len(embeddings[0]) if embeddings else 0})")
@@ -52,7 +89,8 @@ def embed_query(
         List[float]: 查詢文字的向量。
     """
     url = f"{base_url}/api/embeddings"
-    vector = _call_embedding_api(url, model, query)
+    _, query_prefix = _prefixes_for(model)
+    vector = _call_embedding_api(url, model, query_prefix + query)
     print(f"[Embedder] Embedded query ({len(vector)} dims)")
     return vector
 
