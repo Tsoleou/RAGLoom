@@ -1,9 +1,10 @@
 import { useState } from "react";
 import { FlowEditor } from "./components/FlowEditor";
 import { ChatView } from "./components/ChatView";
+import { Dashboard } from "./components/Dashboard";
 import { Avatar } from "./components/avatar/Avatar";
 
-type View = "editor" | "chat";
+type View = "editor" | "chat" | "dashboard";
 
 // TEMP preview harness — reach via ?preview=avatar, no backend needed. Remove when done.
 export function AvatarPreview() {
@@ -32,7 +33,9 @@ function App() {
   const hint =
     view === "editor"
       ? "Drag nodes to build pipeline / click Run to execute"
-      : "Chat with the RAG pipeline";
+      : view === "chat"
+        ? "Chat with the RAG pipeline"
+        : "Analyze user query behavior";
 
   return (
     <div className="h-screen flex flex-col bg-[#1a1a1a]">
@@ -59,12 +62,18 @@ function App() {
           >
             Chat
           </button>
+          <button
+            onClick={() => setView("dashboard")}
+            className={`px-3 py-1.5 transition-colors ${view === "dashboard" ? "bg-[#e07830] text-white" : "bg-[#252525] text-[#888] hover:bg-[#2a2a2a]"}`}
+          >
+            Dashboard
+          </button>
         </div>
       </header>
 
       {/* Main content */}
       <main className="flex-1 overflow-hidden">
-        {view === "editor" ? <FlowEditor /> : <ChatView />}
+        {view === "editor" ? <FlowEditor /> : view === "chat" ? <ChatView /> : <Dashboard />}
       </main>
     </div>
   );

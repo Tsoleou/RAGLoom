@@ -13,6 +13,9 @@ venv/
 chroma_db/
 test_chroma_db/
 
+# Query-log analytics DB
+data/
+
 # Frontend
 frontend/node_modules/
 frontend/dist/

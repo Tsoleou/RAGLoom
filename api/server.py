@@ -17,7 +17,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from api.auth import LocalTokenMiddleware, _ensure_api_token, _settings
 from api.profiles_store import _migrate_legacy_profiles_if_needed
-from api.routers import chat, eval, graph, profiles
+from api.routers import chat, dashboard, eval, graph, profiles
 
 
 # ── Lifespan ───────────────────────────────────────────────────────
@@ -53,3 +53,4 @@ app.include_router(graph.router)
 app.include_router(chat.router)
 app.include_router(profiles.router)
 app.include_router(eval.router)
+app.include_router(dashboard.router)

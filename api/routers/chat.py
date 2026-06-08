@@ -4,6 +4,8 @@ active profile's graph, and reset multi-turn memory.
 Owns the `chat_pipe` singleton — the only state these three endpoints share.
 """
 
+import time
+
 from fastapi import APIRouter
 
 from api.chat_service import (
@@ -14,6 +16,7 @@ from api.chat_service import (
 from api.default_graph import _default_chat_graph
 from api.engine import execute_graph
 from api.profiles_store import _load_profiles
+from api.query_log import log_query
 from api.schemas import ChatQueryRequest
 from config.settings import Settings
 from core.pipeline import RAGPipeline
@@ -67,9 +70,17 @@ def chat_query(req: ChatQueryRequest):
     if gen_id is not None:
         overrides.setdefault(gen_id, {})["messages"] = chat_pipe._messages
 
+    started = time.perf_counter()
     try:
         results, outputs = execute_graph(nodes, edges, input_overrides=overrides, return_outputs=True)
     except Exception as e:
+        # Errors are behavior signal too — log the failed turn before returning.
+        log_query(
+            query=req.message, response=None, profile=active,
+            model=settings.llm_model,
+            latency_ms=round((time.perf_counter() - started) * 1000),
+            status="error", error=str(e),
+        )
         return {"status": "error", "message": str(e)}
 
     # Persist updated history only when the generator actually ran. A guard
@@ -80,7 +91,26 @@ def chat_query(req: ChatQueryRequest):
         if gen_answer is not None and hasattr(gen_answer, "messages"):
             chat_pipe._messages = gen_answer.messages
 
-    return _extract_chat_response(nodes, results, outputs, settings)
+    response = _extract_chat_response(nodes, results, outputs, settings)
+
+    # A node-level failure (e.g. Ollama 500 in the generator) is caught *inside*
+    # execute_graph — it marks that node status="error" and breaks, but does NOT
+    # re-raise, so the except above never fires. Detect the errored node here so
+    # the dashboard's error metric reflects real failures instead of logging a
+    # silently-empty answer as "ok".
+    errored = next((r for r in results.values() if r.get("status") == "error"), None)
+    if errored is not None:
+        status, error = "error", errored.get("preview")
+    else:
+        status, error = ("blocked" if response.get("blocked") else "ok"), None
+
+    log_query(
+        query=req.message, response=response, profile=active,
+        model=settings.llm_model,
+        latency_ms=round((time.perf_counter() - started) * 1000),
+        status=status, error=error,
+    )
+    return response
 
 
 @router.post("/api/chat/reset")

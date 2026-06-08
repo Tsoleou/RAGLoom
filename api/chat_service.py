@@ -158,6 +158,7 @@ def _extract_chat_response(
         for r in retr_results:
             retrieval_rows.append({
                 "source": r.chunk.metadata.get("filename", "unknown"),
+                "product_id": r.chunk.metadata.get("product_id") or None,
                 "score": round(r.score, 4),
                 "distance": round(r.distance, 4),
                 "passed": r.score >= threshold,
