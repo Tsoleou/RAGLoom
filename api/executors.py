@@ -63,6 +63,13 @@ from core.critic import critique_answer, revise_answer
 from core.generator import GenerationResult
 from core.personas import get_preset
 from core.product_selector import select_product
+from core.intent_router import classify_intent as _classify_intent
+from core.dialogue_flow import (
+    parse_stages as _parse_stages,
+    parse_scripts as _parse_scripts,
+    advance_stage as _advance_stage,
+    build_stage_directive as _build_stage_directive,
+)
 from core.eval_metrics import (
     compute_coverage,
     compute_score_distribution,
@@ -1122,6 +1129,102 @@ def execute_eval_report(inputs: dict, params: dict) -> dict:
 
 # ── Executor Registry ──────────────────────────────────────────────
 
+def execute_intent_router(inputs: dict, params: dict) -> dict:
+    """Classify the visitor's message into one inquiry intent (dynamic routing).
+
+    Re-classifies every turn so a topic-hopping visitor (spec → compare →
+    suitability) is followed immediately. Outputs the intent label (or "" when
+    nothing matches) on `intent`, consumed by the DialogueFlow to pick a script.
+    The chat router persists the result so DialogueFlow can detect intent changes.
+    """
+    query = inputs.get("query", "") or ""
+    settings = Settings()
+    model = params.get("model", "gemma3:4b")
+    intents_raw = params.get("intents", "")
+    try:
+        intents = json.loads(intents_raw) if isinstance(intents_raw, str) and intents_raw.strip() else intents_raw
+    except (ValueError, TypeError):
+        intents = None
+    if not isinstance(intents, list):
+        intents = None  # classify_intent falls back to DEFAULT_INTENTS
+
+    intent = _classify_intent(query, intents, model=model, base_url=settings.ollama_base_url)
+    preview = f"intent={intent or 'NONE'}"
+    print(f"[Executor:IntentRouter] {preview}")
+    return {"intent": intent, "_preview": preview}
+
+
+def execute_dialogue_flow(inputs: dict, params: dict) -> dict:
+    """Guided multi-turn inquiry script: advance the conversation stage and
+    inject the active stage's directive into the persona flowing to the Generator.
+
+    Sits on the SystemPrompt → Generator edge: takes the persona text on
+    `system_prompt_in`, appends this turn's stage directive, and emits the
+    combined text on `system_prompt_out`.
+
+    DYNAMIC routing: the active script is chosen by the `intent` input (from an
+    upstream IntentRouter) against the `scripts` param; when `intent` changes
+    from the previous turn (`prev_intent`, supplied via override) the stage resets
+    to 0. With no intent wired/matched, the flat `stages` fallback runs, so the
+    node also works standalone — identical to its pre-routing behavior.
+
+    Stage state, previous intent, and history arrive via input_overrides
+    (`stage_state`, `prev_intent`, `messages`) — session-scoped, not graph-wired,
+    so intentionally NOT declared as ports (same pattern as Generator.messages).
+    `stage_out` is read back by the chat router and persisted for the next turn.
+    """
+    persona_in = inputs.get("system_prompt_in", "") or ""
+    query = inputs.get("query", "") or ""
+    messages = inputs.get("messages") or []
+    intent = (inputs.get("intent") or "").strip()
+    prev_intent = inputs.get("prev_intent")  # None when not supplied (standalone)
+    try:
+        stage_state = int(inputs.get("stage_state", 0))
+    except (TypeError, ValueError):
+        stage_state = 0
+
+    settings = Settings()
+    model = params.get("model", "gemma3:4b")
+
+    # Pick the script: matched intent → its script; else flat `stages` fallback.
+    scripts = _parse_scripts(params.get("scripts", ""))
+    if intent and intent in scripts:
+        stages = scripts[intent]
+        script_label = intent
+    else:
+        stages = _parse_stages(params.get("stages", ""))
+        script_label = ""
+
+    # Dynamic routing: a new intent means we entered a new script — restart at
+    # stage 0. prev_intent is None when running standalone (no router), so this
+    # never fires and behavior matches the single-script path.
+    if intent and prev_intent is not None and intent != prev_intent:
+        current_index = 0
+    else:
+        current_index = stage_state
+
+    new_index, advanced = _advance_stage(
+        stages, current_index, query, messages,
+        model=model, base_url=settings.ollama_base_url,
+    )
+    directive = _build_stage_directive(stages, new_index, script_label)
+    combined = f"{persona_in}\n\n{directive}" if persona_in else directive
+
+    stage_name = stages[new_index].name if stages else "-"
+    tag = f"{script_label}:" if script_label else ""
+    preview = f"{tag}stage {new_index + 1}/{len(stages)}: {stage_name}"
+    if advanced:
+        preview += " (advanced)"
+    elif intent and prev_intent is not None and intent != prev_intent:
+        preview += " (switched)"
+    print(f"[Executor:DialogueFlow] {preview}")
+    return {
+        "system_prompt_out": combined,
+        "stage_out": new_index,
+        "_preview": preview,
+    }
+
+
 EXECUTORS: dict[str, callable] = {
     "loader": execute_loader,
     "chunker": execute_chunker,
@@ -1138,6 +1241,8 @@ EXECUTORS: dict[str, callable] = {
     "retriever": execute_retriever,
     "prompt_builder": execute_prompt_builder,
     "system_prompt": execute_system_prompt,
+    "intent_router": execute_intent_router,
+    "dialogue_flow": execute_dialogue_flow,
     "generator": execute_generator,
     "output_critic": execute_output_critic,
     "result_display": execute_result_display,

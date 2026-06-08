@@ -51,6 +51,8 @@ class RAGPipeline:
         self.client = get_client(self.config.chroma_persist_path)
         self.collection = create_collection(self.client)
         self._messages = []  # Ollama 多輪對話歷史（user + assistant，不含 system）
+        self._stage = 0  # DialogueFlow 目前腳本關卡（跨輪持久，隨對話 reset）
+        self._intent = ""  # DialogueFlow 上一輪的詢問意圖（動態路由偵測換腳本用）
         self._last_retrieval = []  # 最近一次檢索結果（未經 constraint filter）
         self._last_guards: list[dict] = []  # 最近一次每層 guard 的決策軌跡
         self._last_constraint_trace: list[dict] = []  # 最近一次數值約束過濾軌跡
@@ -327,6 +329,8 @@ class RAGPipeline:
         delete_collection(self.client, name)
         self.collection = create_collection(self.client)
         self._messages = []
+        self._stage = 0
+        self._intent = ""
         self._last_retrieval = []
         self._last_guards = []
         self._product_ids = set()
@@ -348,6 +352,8 @@ class RAGPipeline:
     def reset_conversation(self) -> None:
         """清除多輪對話 context（不影響知識庫）。"""
         self._messages = []
+        self._stage = 0  # 換客戶時對話腳本回到第一關
+        self._intent = ""
         self._last_retrieval = []
         self._last_guards = []
         print("[Pipeline] Conversation context cleared")

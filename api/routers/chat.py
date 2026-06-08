@@ -70,6 +70,21 @@ def chat_query(req: ChatQueryRequest):
     if gen_id is not None:
         overrides.setdefault(gen_id, {})["messages"] = chat_pipe._messages
 
+    # DialogueFlow script: stage + previous intent persist across turns the same
+    # way history does. Feed the current stage, the prior turn's intent (so the
+    # node can detect a topic switch and reset the script), and history into the
+    # node; the new stage is written back after the turn. No-op when the active
+    # profile's graph has no DialogueFlow node.
+    df_id = next((n["id"] for n in nodes if n.get("type") == "dialogue_flow"), None)
+    if df_id is not None:
+        df_over = overrides.setdefault(df_id, {})
+        df_over["stage_state"] = chat_pipe._stage
+        df_over["prev_intent"] = chat_pipe._intent
+        df_over["messages"] = chat_pipe._messages
+
+    # IntentRouter classifies from the query edge (dynamic, no override needed).
+    ir_id = next((n["id"] for n in nodes if n.get("type") == "intent_router"), None)
+
     started = time.perf_counter()
     try:
         results, outputs = execute_graph(nodes, edges, input_overrides=overrides, return_outputs=True)
@@ -83,13 +98,31 @@ def chat_query(req: ChatQueryRequest):
         )
         return {"status": "error", "message": str(e)}
 
-    # Persist updated history only when the generator actually ran. A guard
-    # short-circuit leaves history untouched, so refusals never pollute it —
-    # same behavior as the old pipeline.query() path.
-    if gen_id is not None:
-        gen_answer = (outputs.get(gen_id) or {}).get("answer")
-        if gen_answer is not None and hasattr(gen_answer, "messages"):
-            chat_pipe._messages = gen_answer.messages
+    # A turn "commits" only when the generator actually produced an answer — i.e.
+    # no guard short-circuited it. The generator runs last (after every gate), so
+    # its answer is the single authoritative signal that the turn was served.
+    gen_answer = (outputs.get(gen_id) or {}).get("answer") if gen_id is not None else None
+    turn_committed = gen_answer is not None and hasattr(gen_answer, "messages")
+
+    # Persist ALL conversation state (history, intent, dialogue stage) together,
+    # and only on a committed turn. A guard short-circuit — ScopeGate blocking an
+    # off-topic question, Guardrail/PriceGuard, etc. — therefore freezes the whole
+    # dialogue: refusals never pollute history, and a blocked off-topic turn can't
+    # churn the funnel's stage/intent even though IntentRouter / DialogueFlow run
+    # upstream of ScopeGate in topo order. This is what makes the guards
+    # authoritative over the script state. Intent is written back AFTER the turn:
+    # DialogueFlow already consumed the prior value as prev_intent, and this turn's
+    # intent becomes next turn's prev.
+    if turn_committed:
+        chat_pipe._messages = gen_answer.messages
+        if ir_id is not None:
+            ir_intent = (outputs.get(ir_id) or {}).get("intent")
+            if isinstance(ir_intent, str):
+                chat_pipe._intent = ir_intent
+        if df_id is not None:
+            df_stage = (outputs.get(df_id) or {}).get("stage_out")
+            if isinstance(df_stage, int):
+                chat_pipe._stage = df_stage
 
     response = _extract_chat_response(nodes, results, outputs, settings)
 

@@ -25,6 +25,8 @@ import {
   CircleCheck,
   FileBarChart,
   ListChecks,
+  Route,
+  Signpost,
   Box,
   type LucideIcon,
 } from "lucide-react";
@@ -53,6 +55,8 @@ const NODE_ICONS: Record<string, LucideIcon> = {
   retriever: Search,
   prompt_builder: FileCode,
   system_prompt: Settings,
+  intent_router: Signpost,
+  dialogue_flow: Route,
   generator: Sparkles,
   output_critic: ShieldCheck,
   result_display: MessageCircle,

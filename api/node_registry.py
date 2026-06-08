@@ -13,6 +13,11 @@ from core.scope_gate import (
     DEFAULT_ON_TOPIC_ANCHORS,
     DEFAULT_OFF_TOPIC_ANCHORS,
 )
+from core.dialogue_flow import (
+    DEFAULT_STAGES as DIALOGUE_FLOW_DEFAULT_STAGES,
+    DEFAULT_SCRIPTS as DIALOGUE_FLOW_DEFAULT_SCRIPTS,
+)
+from core.intent_router import DEFAULT_INTENTS as INTENT_ROUTER_DEFAULT_INTENTS
 
 
 @dataclass
@@ -425,6 +430,90 @@ _register(NodeType(
                 "4. Match the user's language (English, 繁體中文, etc.).\n"
                 "5. Tone: Professional, confident, approachable. No marketing fluff."
             ),
+        ),
+    ],
+))
+
+# --- Intent Router ---
+_register(NodeType(
+    type_id="intent_router",
+    label="Intent Router",
+    label_en="IntentRouter",
+    description=(
+        "Classify the visitor's message into one booth-inquiry intent (spec / "
+        "recommend / compare / suitability …) so a downstream DialogueFlow can "
+        "pick the matching script. Routing is DYNAMIC — the intent is re-detected "
+        "every turn, so a topic-hopping visitor is followed immediately (one small "
+        "LLM classification call per turn). Outputs the intent label, or empty "
+        "when nothing clearly matches (greeting / small talk) — DialogueFlow then "
+        "uses its generic fallback. Edit `intents` (JSON) to add / rename intents; "
+        "keep labels in sync with DialogueFlow's scripts."
+    ),
+    category="query",
+    inputs=[
+        Port("query", "query", "Query Text"),
+    ],
+    outputs=[
+        Port("intent", "intent", "Intent"),
+    ],
+    params=[
+        ParamDef("model", "Model", "string", "gemma3:4b"),
+        ParamDef(
+            "intents",
+            "Intents (JSON list of {label, description})",
+            "textarea",
+            json.dumps(INTENT_ROUTER_DEFAULT_INTENTS, ensure_ascii=False, indent=2),
+        ),
+    ],
+))
+
+# --- Dialogue Flow ---
+_register(NodeType(
+    type_id="dialogue_flow",
+    label="Dialogue Flow",
+    label_en="DialogueFlow",
+    description=(
+        "Guided multi-turn inquiry script for a product booth. Sits on the "
+        "SystemPrompt → Generator edge — it takes the persona text, appends the "
+        "current stage's instruction so the bot knows what to do THIS turn, and "
+        "passes the combined text to the Generator. Wire an IntentRouter into "
+        "`intent` for DYNAMIC routing: the active script is chosen per turn from "
+        "the `scripts` map (spec / recommend / compare / suitability), and the "
+        "stage resets when the intent changes. With no intent wired, the flat "
+        "`stages` fallback runs (works standalone). Stage CONTROL (which stage, "
+        "when to advance) is kept separate from CONTENT (what to say): in the "
+        "default 'soft' mode a single constrained YES/NO LLM call decides "
+        "advancement, because small models can't reliably self-manage a script "
+        "from a free-form prompt. Stage + intent persist across turns and reset "
+        "with the conversation."
+    ),
+    category="query",
+    # Ports are named *_in / *_out to avoid same-node DOM id collisions (see
+    # Guardrail). `stage_state`, `prev_intent`, `messages` are NOT ports — they
+    # arrive via session overrides, exactly like the Generator's `messages`.
+    inputs=[
+        Port("system_prompt_in", "system_prompt", "System Prompt"),
+        Port("query", "query", "Query Text"),
+        Port("intent", "intent", "Intent"),
+    ],
+    outputs=[
+        Port("system_prompt_out", "system_prompt", "System Prompt"),
+        Port("stage_out", "stage", "Stage"),
+    ],
+    params=[
+        ParamDef("mode", "Mode", "select", "soft", options=["soft"]),
+        ParamDef("model", "Gate Model (soft mode)", "string", "gemma3:4b"),
+        ParamDef(
+            "scripts",
+            "Scripts (JSON {intent: [{name, goal, advance_when, instruction}]})",
+            "textarea",
+            json.dumps(DIALOGUE_FLOW_DEFAULT_SCRIPTS, ensure_ascii=False, indent=2),
+        ),
+        ParamDef(
+            "stages",
+            "Fallback Stages (JSON list, used when no intent matches)",
+            "textarea",
+            json.dumps(DIALOGUE_FLOW_DEFAULT_STAGES, ensure_ascii=False, indent=2),
         ),
     ],
 ))
