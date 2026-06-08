@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RAGLoom 節點 Input / Output 對照表</title>
+<style>
+  :root {
+    --accent: #e07830;
+    --bg: #1b1b1b;
+    --panel: #242424;
+    --panel2: #2b2b2b;
+    --text: #e8e8e8;
+    --muted: #9a9a9a;
+    --border: #3a3a3a;
+    --code: #ffd9a8;
+    --in: #6aa0d8;
+    --out: #5fbf8f;
+    --ty: #e0c060;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, "PingFang TC", "Microsoft JhengHei", "Noto Sans TC", sans-serif;
+    line-height: 1.7;
+    font-size: 15px;
+  }
+  .wrap { max-width: 1000px; margin: 0 auto; padding: 40px 28px 120px; }
+  h1 { font-size: 30px; margin: 0 0 6px; border-bottom: 3px solid var(--accent); padding-bottom: 14px; }
+  h2 { font-size: 22px; margin: 52px 0 16px; color: var(--accent); border-left: 5px solid var(--accent); padding-left: 12px; }
+  h3 { font-size: 17px; margin: 30px 0 10px; background: var(--panel2); padding: 8px 12px; border-radius: 6px; border-left: 3px solid #6aa0d8; }
+  .lead { color: var(--muted); font-size: 14px; margin: 0 0 8px; background: var(--panel); padding: 12px 16px; border-radius: 8px; border-left: 4px solid #6aa0d8; }
+  table { border-collapse: collapse; width: 100%; margin: 14px 0; font-size: 14px; background: var(--panel); border-radius: 8px; overflow: hidden; }
+  th, td { border: 1px solid var(--border); padding: 8px 11px; text-align: left; vertical-align: top; }
+  th { background: var(--panel2); color: var(--accent); font-weight: 600; }
+  tr:nth-child(even) td { background: #262626; }
+  code { background: #111; color: var(--code); padding: 2px 6px; border-radius: 4px; font-family: "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace; font-size: 13px; }
+  pre { background: #111; border: 1px solid var(--border); border-radius: 8px; padding: 16px; overflow-x: auto; line-height: 1.5; }
+  pre code { background: none; color: #cfe3ff; padding: 0; font-size: 12.5px; }
+  ul { padding-left: 22px; }
+  li { margin: 5px 0; }
+  blockquote, .note { margin: 14px 0; padding: 12px 16px; background: var(--panel); border-left: 4px solid var(--accent); border-radius: 6px; color: #f0ddc8; }
+  .warn { border-left-color: #d8a23a; background: #2a2418; color: #f3e2bf; }
+  .toc { background: var(--panel); border-radius: 10px; padding: 16px 22px; margin: 24px 0 10px; }
+  .toc a { color: #8cc0ff; text-decoration: none; }
+  .toc a:hover { text-decoration: underline; }
+  .star { color: var(--accent); }
+  hr { border: none; border-top: 1px solid var(--border); margin: 40px 0; }
+  strong { color: #fff; }
+  /* IO example box */
+  .io { margin: 12px 0; border-radius: 8px; overflow: hidden; border: 1px solid var(--border); }
+  .io .row { display: flex; gap: 0; align-items: stretch; }
+  .io .tag { flex: 0 0 92px; padding: 10px 12px; font-weight: 700; font-size: 13px; color: #fff; display: flex; align-items: center; gap: 6px; }
+  .io .in  { background: #243a52; border-left: 4px solid var(--in); }
+  .io .out { background: #1f3a2c; border-left: 4px solid var(--out); }
+  .io .val { flex: 1; padding: 10px 14px; background: #111; font-size: 13px; font-family: "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace; color: #cfe3ff; overflow-x: auto; white-space: pre-wrap; word-break: break-word; }
+  .io .val .lbl { color: var(--muted); font-family: inherit; }
+  .ty { color: #1b1b1b; background: var(--ty); font-weight: 700; padding: 1px 6px; border-radius: 4px; font-size: 12px; font-family: "SF Mono", Menlo, monospace; }
+  .reject { color: #e88; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>RAGLoom 節點 Input / Output 對照表</h1>
+<p class="lead">每個節點都給「<span style="color:var(--in)">輸入</span> → <span style="color:var(--out)">吐出</span>」的具體範例,並標上 Python <span class="ty">資料型別</span>。
+全篇用同一個問題 <code>有沒有 1kg 以下的筆電?</code> 一路接力。<br>
+真實來源:<code>api/node_registry.py</code>(handle 定義)與 <code>core/*.py</code>(資料結構)。</p>
+
+<div class="toc">
+  <strong>目錄</strong>
+  <ul>
+    <li><a href="#s0">0. 線路上流動的資料型別總覽</a></li>
+    <li><a href="#s1">1. Ingest 鏈(灌知識進向量庫)</a></li>
+    <li><a href="#s2">2. Query 鏈(問問題 → 產生答案)</a></li>
+    <li><a href="#s3">3. Eval 節點(Editor 專用)</a></li>
+    <li><a href="#s4">4. 資料接力全圖</a></li>
+    <li><a href="#s5">速記重點</a></li>
+  </ul>
+</div>
+
+<h2 id="s0">0. 線路上流動的資料型別總覽</h2>
+<p>每種連線資料對應一個 Python 型別。後面每個節點的輸入/輸出都會標到這張表的型別:</p>
+<table>
+<thead><tr><th>型別名 (data_type)</th><th>Python 型別</th><th>範例</th></tr></thead>
+<tbody>
+<tr><td><code>query</code></td><td><span class="ty">str</span></td><td><code>"有沒有 1kg 以下的筆電?"</code></td></tr>
+<tr><td><code>documents</code></td><td><span class="ty">list[Document]</span><br><span class="lbl" style="color:var(--muted)">Document = {content: str, metadata: dict}</span></td><td><code>[Document(content="# StarForge…", metadata={"filename":"starforge.md"})]</code></td></tr>
+<tr><td><code>chunks</code></td><td><span class="ty">list[Chunk]</span><br><span class="lbl" style="color:var(--muted)">Chunk = {text: str, metadata: dict}</span></td><td><code>[Chunk(text="StarForge 14 重 1.2kg", metadata={…})]</code></td></tr>
+<tr><td><code>embeddings</code></td><td><span class="ty">list[list[float]]</span></td><td><code>[[0.12, -0.04, …768個…], …]</code></td></tr>
+<tr><td><code>collection</code></td><td><span class="ty">chromadb.Collection</span><br><span class="lbl" style="color:var(--muted)">(物件,非文字)</span></td><td><code>&lt;Chroma Collection "rag_collection"&gt;</code></td></tr>
+<tr><td><code>results</code></td><td><span class="ty">list[RetrievalResult]</span><br><span class="lbl" style="color:var(--muted)">RetrievalResult = {chunk: Chunk, score: float, distance: float}</span></td><td><code>[RetrievalResult(chunk=…, score=0.82, distance=0.18)]</code></td></tr>
+<tr><td><code>reference</code></td><td><span class="ty">str</span></td><td><code>"StarForge 14, 1.2kg\nNovaPad, 0.9kg"</code></td></tr>
+<tr><td><code>product_id</code></td><td><span class="ty">str</span><br><span class="lbl" style="color:var(--muted)">(可能為空 "")</span></td><td><code>"starforge"</code> 或 <code>""</code></td></tr>
+<tr><td><code>prompt</code></td><td><span class="ty">dict</span><br><span class="lbl" style="color:var(--muted)">{"system": str, "user": str}</span></td><td><code>{"system":"[內部知識]…", "user":"多重?"}</code></td></tr>
+<tr><td><code>system_prompt</code></td><td><span class="ty">str</span></td><td><code>"You are a product specialist…"</code></td></tr>
+<tr><td><code>format_hint</code></td><td><span class="ty">str | dict</span><br><span class="lbl" style="color:var(--muted)">空字串=純文字;dict=JSON schema</span></td><td><code>""</code> 或 <code>{…schema…}</code></td></tr>
+<tr><td><code>answer</code></td><td><span class="ty">str</span></td><td><code>"StarForge 14 重 1.2kg。"</code></td></tr>
+<tr><td><code>judge_trace</code></td><td><span class="ty">list[dict]</span></td><td><code>[{"i":0, "keep":True, "reason":"…", "source":"…", "score":0.82}]</code></td></tr>
+<tr><td><code>metric</code>(eval)</td><td><span class="ty">dict</span><br><span class="lbl" style="color:var(--muted)">{"name": str, "score": float|None, "details": dict}</span></td><td><code>{"name":"coverage", "score":1.0, "details":{"hit":True, "rank":2}}</code></td></tr>
+</tbody>
+</table>
+<blockquote>兩端的 data_type 一樣才能接。<code>results</code> 只能接到吃 <code>results</code> 的 input。</blockquote>
+
+<hr>
+
+<h2 id="s1">1. Ingest 鏈(把知識灌進向量庫,平常 ChatView 另外跑)</h2>
+<pre><code>Loader → Chunker → Embedder ↘
+                   Chunker  → VectorStore</code></pre>
+
+<h3>Loader(載入檔案)</h3>
+<p>從硬碟讀檔,變成 <code>Document</code> 物件。</p>
+<div class="io">
+  <div class="row"><div class="tag in">▼ 輸入</div><div class="val">(無連線輸入)param <code>source_path</code> <span class="ty">str</span> = "./knowledge_base"</div></div>
+  <div class="row"><div class="tag out">▲ 吐出</div><div class="val"><span class="lbl"># documents　</span><span class="ty">list[Document]</span>
+[Document(content="# StarForge 14\n重量 1.2kg\nGPU RTX 4060…", metadata={"filename":"starforge.md"})]</div></div>
+</div>
+
+<h3>Chunker(切塊)</h3>
+<p>把一份大文件切成多個小片段(預設按章節切)。param <code>chunk_size</code> <span class="ty">int</span>、<code>chunk_overlap</code> <span class="ty">int</span>。</p>
+<div class="io">
+  <div class="row"><div class="tag in">▼ 輸入</div><div class="val"><span class="lbl"># documents　</span><span class="ty">list[Document]</span>
+[Document(content="# StarForge 14\n重量 1.2kg…", metadata={"filename":"starforge.md"})]</div></div>
+  <div class="row"><div class="tag out">▲ 吐出</div><div class="val"><span class="lbl"># chunks　</span><span class="ty">list[Chunk]</span>
+[Chunk(text="StarForge 14 重 1.2kg,鎂鋁合金機身", metadata={"section_title":"規格"}),
+ Chunk(text="GPU 為 RTX 4060,適合遊戲與創作", metadata={"section_title":"效能"})]</div></div>
+</div>
+
+<h3>Embedder(向量化)</h3>
+<p>把每個 chunk 的文字變成一串數字(向量)。</p>
+<div class="io">
+  <div class="row"><div class="tag in">▼ 輸入</div><div class="val"><span class="lbl"># chunks　</span><span class="ty">list[Chunk]</span>
+[Chunk(text="StarForge 14 重 1.2kg…"), Chunk(text="GPU 為 RTX 4060…")]</div></div>
+  <div class="row"><div class="tag out">▲ 吐出</div><div class="val"><span class="lbl"># embeddings　</span><span class="ty">list[list[float]]</span>
+[[0.12, -0.04, 0.88, …共768個 float…],
+ [0.07,  0.31, -0.22, …共768個 float…]]</div></div>
+</div>
+
+<h3>VectorStore(向量庫)</h3>
+<p>把「chunk 文字 + 對應向量」一起存進 ChromaDB。</p>
+<div class="io">
+  <div class="row"><div class="tag in">▼ 輸入</div><div class="val"><span class="lbl"># chunks　</span><span class="ty">list[Chunk]</span><span class="lbl">　＋　# embeddings　</span><span class="ty">list[list[float]]</span>
+chunks=[Chunk(text="StarForge 14 重 1.2kg…"), …]
+embeddings=[[0.12, -0.04, …], …]</div></div>
+  <div class="row"><div class="tag out">▲ 吐出</div><div class="val"><span class="lbl"># collection　</span><span class="ty">chromadb.Collection</span>
+&lt;Chroma Collection "rag_collection"，已存 2 筆&gt;</div></div>
+</div>
+
+<hr>
+
+<h2 id="s2">2. Query 鏈(使用者問問題 → 產生答案)</h2>
+<p>主鏈,全部用同一個問題 <code>有沒有 1kg 以下的筆電?</code> 接力:</p>
+<pre><code>QueryInput → Guardrail → PriceGuard → Retriever → RetrievalJudge → ScopeGate
+           → ConstraintFilter → PromptBuilder → Generator → OutputCritic → ResultDisplay</code></pre>
+
+<h3>QueryInput(問題輸入)</h3>
+<p>整條流程的起點。</p>
+<div class="io">
+  <div class="row"><div class="tag in">▼ 輸入</div><div class="val">(無連線輸入)param <code>question</code> <span class="ty">str</span> = 使用者打的字</div></div>
+  <div class="row"><div class="tag out">▲ 吐出</div><div class="val"><span class="lbl"># query　</span><span class="ty">str</span>
+"有沒有 1kg 以下的筆電?"</div></div>
+</div>
+
+<h3>Guardrail(關鍵字攔截)</h3>
+<p>問題含黑名單字(asus/acer…)就<strong>短路</strong>,直接回拒絕訊息。</p>
+<div class="io">
+  <div class="row"><div class="tag in">▼ 輸入</div><div class="val"><span class="lbl"># query_in　</span><span class="ty">str</span>
+"有沒有 1kg 以下的筆電?"</div></div>
+  <div class="row"><div class="tag out">▲ 吐出</div><div class="val"><span class="lbl"># query_out　</span><span class="ty">str</span><span class="lbl">（沒踩線 → 原樣）</span>
+"有沒有 1kg 以下的筆電?"</div></div>
+</div>
+<div class="note warn">反例:輸入 <code>"Asus 的筆電好嗎?"</code> → 吐出 <span class="reject">拒絕訊息(<span class="ty">str</span>,流程中止)</span></div>
+<div class="note">⚠️ input <code>query_in</code> / output <code>query_out</code> 故意不同名(避免前端 DOM id 撞號)。</div>
+
+<h3>PriceGuard(價格攔截)</h3>
+<p>問到價格/折扣就短路拒答。</p>
+<div class="io">
+  <div class="row"><div class="tag in">▼ 輸入</div><div class="val"><span class="lbl"># query_in　</span><span class="ty">str</span>
+"有沒有 1kg 以下的筆電?"</div></div>
+  <div class="row"><div class="tag out">▲ 吐出</div><div class="val"><span class="lbl"># query_out　</span><span class="ty">str</span><span class="lbl">（沒問價格 → 原樣）</span>
+"有沒有 1kg 以下的筆電?"</div></div>
+</div>
+<div class="note warn">反例:輸入 <code>"StarForge 多少錢?"</code> → 吐出 <span class="reject">拒絕訊息(<span class="ty">str</span>,流程中止)</span></div>
+
+<h3>Retriever(檢索)</h3>
+<p>拿問題去向量庫撈最相關的前 K 個 chunk。param <code>top_k</code> <span class="ty">int</span>、<code>score_threshold</code> <span class="ty">float</span>。</p>
+<div class="io">
+  <div class="row"><div class="tag in">▼ 輸入</div><div class="val"><span class="lbl"># query　</span><span class="ty">str</span><span class="lbl">　＋　# collection　</span><span class="ty">chromadb.Collection</span>
+query="有沒有 1kg 以下的筆電?"
+collection=&lt;Chroma Collection "rag_collection"&gt;</div></div>
+  <div class="row"><div class="tag out">▲ 吐出</div><div class="val"><span class="lbl"># results　</span><span class="ty">list[RetrievalResult]</span>
+[RetrievalResult(chunk=Chunk(text="NovaPad 重 0.9kg,輕巧便攜"),  score=0.82, distance=0.18),
+ RetrievalResult(chunk=Chunk(text="StarForge 14 重 1.2kg"),     score=0.79, distance=0.21)]</div></div>
+</div>
+
+<h3>RetrievalJudge(LLM 重排)</h3>
+<p>用 LLM 判斷每個 chunk「是否真的回答了問題」,丟掉不對的。</p>
+<div class="io">
+  <div class="row"><div class="tag in">▼ 輸入</div><div class="val"><span class="lbl"># query　</span><span class="ty">str</span><span class="lbl">　＋　# results_in　</span><span class="ty">list[RetrievalResult]</span>
+query="有沒有 1kg 以下的筆電?"
+results=[NovaPad 0.9kg(0.82), StarForge 1.2kg(0.79)]</div></div>
+  <div class="row"><div class="tag out">▲ 吐出</div><div class="val"><span class="lbl"># results_out　</span><span class="ty">list[RetrievalResult]</span><span class="lbl">　＋　# judge_trace　</span><span class="ty">list[dict]</span>
+results=[NovaPad 0.9kg, StarForge 1.2kg]
+judge_trace=[{"i":0, "keep":True, "reason":"提到重量", "source":"novapad.md",   "score":0.82},
+             {"i":1, "keep":True, "reason":"提到重量", "source":"starforge.md", "score":0.79}]</div></div>
+</div>
+
+<h3>ScopeGate(主題範圍守門)</h3>
+<p>問題離題就短路拒答。</p>
+<div class="io">
+  <div class="row"><div class="tag in">▼ 輸入</div><div class="val"><span class="lbl"># results_in　</span><span class="ty">list[RetrievalResult]</span><span class="lbl">　＋　# query　</span><span class="ty">str</span>
+query="有沒有 1kg 以下的筆電?"
+results=[NovaPad 0.9kg, StarForge 1.2kg]</div></div>
+  <div class="row"><div class="tag out">▲ 吐出</div><div class="val"><span class="lbl"># results_out　</span><span class="ty">list[RetrievalResult]</span><span class="lbl">（在主題 → 原樣）</span>
+[NovaPad 0.9kg, StarForge 1.2kg]</div></div>
+</div>
+<div class="note warn">反例:輸入 <code>query="今天天氣如何?"</code> → 吐出 <span class="reject">拒絕訊息(<span class="ty">str</span>,流程中止)</span></div>
+
+<h3>ConstraintFilter(數值約束過濾,純 code 無 LLM)</h3>
+<p>用 regex 從問題抽出數值條件,把違規產品同時從 chunk 和 reference 砍掉。</p>
+<div class="io">
+  <div class="row"><div class="tag in">▼ 輸入</div><div class="val"><span class="lbl"># query　</span><span class="ty">str</span><span class="lbl">　＋　# results_in　</span><span class="ty">list[RetrievalResult]</span><span class="lbl">　＋　# reference_in　</span><span class="ty">str</span>
+query="有沒有 1kg 以下的筆電?"        ← 抽出條件 weight &lt; 1.0kg
+results=[NovaPad 0.9kg, StarForge 1.2kg]
+reference="NovaPad,0.9kg\nStarForge,1.2kg"</div></div>
+  <div class="row"><div class="tag out">▲ 吐出</div><div class="val"><span class="lbl"># results_out　</span><span class="ty">list[RetrievalResult]</span><span class="lbl">　＋　# reference_out　</span><span class="ty">str</span>
+results=[NovaPad 0.9kg]                ← StarForge 1.2kg 超標，砍掉！
+reference="NovaPad,0.9kg"</div></div>
+</div>
+
+<h3>PromptBuilder(組裝提示詞)</h3>
+<p>把問題 + chunk + 參考資料組成給 Generator 的 dict。</p>
+<div class="io">
+  <div class="row"><div class="tag in">▼ 輸入</div><div class="val"><span class="lbl"># query　</span><span class="ty">str</span><span class="lbl">　＋　# results　</span><span class="ty">list[RetrievalResult]</span><span class="lbl">　＋　# reference_data　</span><span class="ty">str</span>
+query="有沒有 1kg 以下的筆電?"
+results=[NovaPad 0.9kg]
+reference="NovaPad,0.9kg"</div></div>
+  <div class="row"><div class="tag out">▲ 吐出</div><div class="val"><span class="lbl"># prompt　</span><span class="ty">dict</span><span class="lbl">　{"system": str, "user": str}</span>
+{
+  "system": "[Internal Knowledge]\nNovaPad 重 0.9kg…\n\n[Reference]\nNovaPad,0.9kg",
+  "user":   "有沒有 1kg 以下的筆電?"
+}</div></div>
+</div>
+
+<h3>SystemPrompt(人設,旁支)</h3>
+<p>輸出人設文字 + 格式提示。param <code>preset</code> <span class="ty">str</span>。</p>
+<div class="io">
+  <div class="row"><div class="tag in">▼ 輸入</div><div class="val">(無連線輸入)param <code>preset</code> <span class="ty">str</span> = "professional"</div></div>
+  <div class="row"><div class="tag out">▲ 吐出</div><div class="val"><span class="lbl"># system_prompt　</span><span class="ty">str</span><span class="lbl">　＋　# format_hint　</span><span class="ty">str | dict</span>
+system_prompt="You are a product specialist… 回答只用內部知識，勿捏造規格。"
+format_hint=""        ← 空字串 = 純文字</div></div>
+</div>
+
+<h3>ReferenceLoader(常駐參考資料,旁支)</h3>
+<p>載入小型對照表/價目表(不切塊、不進向量庫)。</p>
+<div class="io">
+  <div class="row"><div class="tag in">▼ 輸入</div><div class="val">(無連線輸入)param <code>source_path</code> <span class="ty">str</span> = "./knowledge_base/_reference"</div></div>
+  <div class="row"><div class="tag out">▲ 吐出</div><div class="val"><span class="lbl"># reference　</span><span class="ty">str</span>
+"StarForge 14, 1.2kg, 14吋\nNovaPad, 0.9kg, 13吋\nTitanBook, 1.5kg, 16吋"</div></div>
+</div>
+
+<h3>ProductSelector(產品分流,旁支)</h3>
+<p>判斷這題在問哪個產品,輸出單一 <code>product_id</code>。</p>
+<div class="io">
+  <div class="row"><div class="tag in">▼ 輸入</div><div class="val"><span class="lbl"># query　</span><span class="ty">str</span><span class="lbl">　＋　# collection　</span><span class="ty">chromadb.Collection</span><span class="lbl">　＋　# reference_data　</span><span class="ty">str</span>
+query="有沒有 1kg 以下的筆電?"   ← 沒指名某產品</div></div>
+  <div class="row"><div class="tag out">▲ 吐出</div><div class="val"><span class="lbl"># product_id　</span><span class="ty">str</span><span class="lbl">（沒明確對象 → 空字串）</span>
+""</div></div>
+</div>
+<div class="note">反例:輸入 <code>query="StarForge 多重?"</code> → 吐出 <code>"starforge"</code> (<span class="ty">str</span>)。</div>
+
+<h3>Generator(生成答案)<span class="star">⭐</span></h3>
+<p>呼叫 LLM 產生答案。<strong>預設吐純白話文字。</strong>param <code>model</code> <span class="ty">str</span>。</p>
+<div class="io">
+  <div class="row"><div class="tag in">▼ 輸入</div><div class="val"><span class="lbl"># prompt　</span><span class="ty">dict</span><span class="lbl">　＋　# system_prompt　</span><span class="ty">str</span><span class="lbl">　＋　# format_hint　</span><span class="ty">str | dict</span>
+prompt={"system":"[Internal Knowledge]\nNovaPad 重 0.9kg…", "user":"有沒有 1kg 以下的筆電?"}
+system_prompt="You are a product specialist…"
+format_hint=""</div></div>
+  <div class="row"><div class="tag out">▲ 吐出</div><div class="val"><span class="lbl"># answer　</span><span class="ty">str</span><span class="lbl">（純文字！不是 JSON）</span>
+"推薦 NovaPad,它重 0.9kg,在 1kg 以下,輕巧便攜,適合外出攜帶。"</div></div>
+</div>
+<div class="note">內部回 <code>GenerationResult{text: str, messages: list, model: str}</code>,線上的 <code>answer</code> 就是 <code>text</code>。設 <code>format_type="json"</code> 才吐 JSON 字串。</div>
+
+<h3>OutputCritic(品管/改寫)<span class="star">⭐</span></h3>
+<p>對答案再做一次 LLM 審查。<code>audit</code> = 只標記;<code>revise</code> = fail 時自動重寫。</p>
+<div class="io">
+  <div class="row"><div class="tag in">▼ 輸入</div><div class="val"><span class="lbl"># answer_in　</span><span class="ty">str</span><span class="lbl">　＋（選用）# query　</span><span class="ty">str</span><span class="lbl">　# retrieval　</span><span class="ty">list[RetrievalResult]</span><span class="lbl">　# reference_data　</span><span class="ty">str</span>
+answer="推薦 NovaPad,它重 0.9kg,在 1kg 以下…"
+query="有沒有 1kg 以下的筆電?"
+retrieval=[NovaPad 0.9kg]</div></div>
+  <div class="row"><div class="tag out">▲ 吐出</div><div class="val"><span class="lbl"># answer_out　</span><span class="ty">str</span><span class="lbl">（沒違規 → 原樣）</span>
+"推薦 NovaPad,它重 0.9kg,在 1kg 以下,輕巧便攜,適合外出攜帶。"</div></div>
+</div>
+<div class="note warn">審查 LLM 內部回 JSON(<span class="ty">dict</span>)→ <code>{"pass": True, "reason": "Grounded answer."}</code>(由 <code>_extract_json</code> 撈出)。<br>
+若踩線 → <code>{"pass": False, "reason": "Mentions competitor brand Asus."}</code>,mode=revise 時重寫後再吐 <span class="ty">str</span>。</div>
+
+<h3>ResultDisplay(顯示)</h3>
+<p>終點,把最終答案顯示在畫面上。</p>
+<div class="io">
+  <div class="row"><div class="tag in">▼ 輸入</div><div class="val"><span class="lbl"># answer　</span><span class="ty">str</span>
+"推薦 NovaPad,它重 0.9kg,在 1kg 以下,輕巧便攜,適合外出攜帶。"</div></div>
+  <div class="row"><div class="tag out">▲ 吐出</div><div class="val">(無 output)→ 直接渲染到畫面給使用者看</div></div>
+</div>
+
+<hr>
+
+<h2 id="s3">3. Eval 節點(只在 Editor,ChatView 不用)</h2>
+
+<h3>EvalCaseLoader(載入測試案例)</h3>
+<div class="io">
+  <div class="row"><div class="tag in">▼ 輸入</div><div class="val">(無)param <code>case_id</code> <span class="ty">str</span> = "starforge_x1_gpu_en"</div></div>
+  <div class="row"><div class="tag out">▲ 吐出</div><div class="val"><span class="lbl"># 四個 output 全是　</span><span class="ty">str</span>
+query="Does StarForge X1 have a dedicated GPU?"
+expected_product="starforge_x1"
+expected_facts="RTX 4060\n8GB VRAM"
+match_mode="all"</div></div>
+</div>
+
+<h3>CoverageMetric(Hit@K)</h3>
+<div class="io">
+  <div class="row"><div class="tag in">▼ 輸入</div><div class="val"><span class="lbl"># results　</span><span class="ty">list[RetrievalResult]</span><span class="lbl">　＋　# expected_product　</span><span class="ty">str</span></div></div>
+  <div class="row"><div class="tag out">▲ 吐出</div><div class="val"><span class="lbl"># metric　</span><span class="ty">dict</span><span class="lbl">　{"name", "score", "details"}</span>
+{"name":"coverage", "score":1.0,
+ "details":{"hit":True, "rank":2, "top_k":5, "expected_product":"starforge_x1"}}   ← 期望產品出現，排第 2</div></div>
+</div>
+
+<h3>ScoreDistributionMetric(分數分布)</h3>
+<div class="io">
+  <div class="row"><div class="tag in">▼ 輸入</div><div class="val"><span class="lbl"># results　</span><span class="ty">list[RetrievalResult]</span></div></div>
+  <div class="row"><div class="tag out">▲ 吐出</div><div class="val"><span class="lbl"># metric　</span><span class="ty">dict</span><span class="lbl">　score=None（純描述性）</span>
+{"name":"score_distribution", "score":None,
+ "details":{"min":0.41, "max":0.82, "mean":0.63, "std":0.14, "top1":0.82, "topk":0.41, "gap_top1_topk":0.41}}</div></div>
+</div>
+
+<h3>DiversityMetric(產品多樣性)</h3>
+<div class="io">
+  <div class="row"><div class="tag in">▼ 輸入</div><div class="val"><span class="lbl"># results　</span><span class="ty">list[RetrievalResult]</span></div></div>
+  <div class="row"><div class="tag out">▲ 吐出</div><div class="val"><span class="lbl"># metric　</span><span class="ty">dict</span><span class="lbl">　score=正規化熵</span>
+{"name":"diversity", "score":0.92,
+ "details":{"unique_products":3, "entropy":1.46, "entropy_normalized":0.92, "distribution":{"novapad":1,"starforge":1,"titanbook":1}}}</div></div>
+</div>
+
+<h3>FactsCoverageMetric(事實覆蓋)</h3>
+<div class="io">
+  <div class="row"><div class="tag in">▼ 輸入</div><div class="val"><span class="lbl"># results　</span><span class="ty">list[RetrievalResult]</span><span class="lbl">　＋　# expected_facts　</span><span class="ty">str</span><span class="lbl">　＋　# match_mode　</span><span class="ty">str</span></div></div>
+  <div class="row"><div class="tag out">▲ 吐出</div><div class="val"><span class="lbl"># metric　</span><span class="ty">dict</span><span class="lbl">　score=命中比例</span>
+{"name":"facts_coverage", "score":0.5,
+ "details":{"matched":["RTX 4060"], "missing":["8GB VRAM"], "match_mode":"all"}}   ← 兩事實命中一個</div></div>
+</div>
+
+<h3>EvalReport(匯總報告)</h3>
+<div class="io">
+  <div class="row"><div class="tag in">▼ 輸入</div><div class="val"><span class="lbl"># 最多 4 個　</span><span class="ty">dict</span><span class="lbl">（coverage / score_distribution / diversity / facts_coverage）</span></div></div>
+  <div class="row"><div class="tag out">▲ 吐出</div><div class="val"><span class="lbl"># answer　</span><span class="ty">str</span><span class="lbl">（markdown）</span>
+"## Eval Report\n- Hit@K: ✅ rank 2\n- Facts: 1/2 (0.5)\n- Diversity: 3 products…"</div></div>
+</div>
+
+<h3>JudgeTraceInspector(觀察 RetrievalJudge)</h3>
+<div class="io">
+  <div class="row"><div class="tag in">▼ 輸入</div><div class="val"><span class="lbl"># judge_trace　</span><span class="ty">list[dict]</span>
+[{"i":0, "keep":True, "reason":"提到重量", "source":"novapad.md", "score":0.82}, …]</div></div>
+  <div class="row"><div class="tag out">▲ 吐出</div><div class="val">(無 output)→ 只把去留理由顯示出來</div></div>
+</div>
+
+<hr>
+
+<h2 id="s4">4. 一眼看懂的「資料接力」全圖</h2>
+<pre><code>[硬碟檔案]
+   │ documents : list[Document]
+ Loader ─► Chunker ─chunks: list[Chunk]─► Embedder ─embeddings: list[list[float]]─┐
+                  └────chunks: list[Chunk]──────────────► VectorStore ─collection─┐
+                                                                                  │
+[使用者問題]                                                                       │
+   │ query : str                                                                  │
+QueryInput ─► Guardrail ─► PriceGuard ─query: str─► Retriever ◄─collection────────┘
+                                              ▲ product_id: str
+                              ProductSelector ┘
+                                              │ results: list[RetrievalResult]
+                          RetrievalJudge ─results─► ScopeGate ─results─► ConstraintFilter
+                                                                              │ results + reference: str
+            ReferenceLoader ─reference: str──────────────────────────────► PromptBuilder
+                                                                              │ prompt: dict
+                  SystemPrompt ─system_prompt: str / format_hint─────────► Generator
+                                                                              │ answer: str (純文字!)
+                                                                         OutputCritic ─answer: str─► ResultDisplay</code></pre>
+
+<hr>
+
+<h2 id="s5">速記重點</h2>
+<ul>
+<li><strong>大多數線都是 <span class="ty">str</span></strong>:query / reference / system_prompt / answer / product_id 全是字串。</li>
+<li><strong>三種「容器」型別</strong>:<code>results</code>=<span class="ty">list[RetrievalResult]</span>、<code>chunks</code>=<span class="ty">list[Chunk]</span>、<code>prompt</code>=<span class="ty">dict</span>。</li>
+<li><strong>Generator 吐 <span class="ty">str</span></strong>,<strong>Critic 內部判決是 <span class="ty">dict</span></strong>(<code>{"pass",...}</code>)—— 兩者格式相反。</li>
+<li><strong>eval 節點的 metric 全是 <span class="ty">dict</span></strong>。</li>
+<li><strong>Guard 類會「短路」</strong>:踩線就中止,改吐拒絕訊息(仍是 <span class="ty">str</span>)。</li>
+</ul>
+
+</div>
+</body>
+</html>
