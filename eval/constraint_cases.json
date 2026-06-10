@@ -1,0 +1,35 @@
+{
+  "description": "core.constraint_filter.extract_constraints 的確定性回歸 case。expected=null 代表應回空集合（保守不過濾）。新增 case 直接照欄位填即可，毋須改 Python。執行：pytest eval/test_constraint_extraction.py 或 python -m eval.test_constraint_extraction",
+  "cases": [
+    { "query": "不到 1 公斤的筆電", "expected": { "spec": "weight", "op": "lt", "value": 1.0 } },
+    { "query": "laptops under 2kg", "expected": { "spec": "weight", "op": "lt", "value": 2.0 } },
+    { "query": "不超過 1500 公克", "expected": { "spec": "weight", "op": "lte", "value": 1.5 }, "note": "否定詞 trap（'超過'⊂'不超過'）" },
+    { "query": "不低於 2 公斤", "expected": { "spec": "weight", "op": "gte", "value": 2.0 }, "note": "否定詞 trap（'低於'⊂'不低於'）" },
+    { "query": "900克以下", "expected": { "spec": "weight", "op": "lte", "value": 0.9 } },
+    { "query": "螢幕 16 吋以上", "expected": { "spec": "screen", "op": "gte", "value": 16.0 } },
+    { "query": "17吋以上的大螢幕", "expected": { "spec": "screen", "op": "gte", "value": 17.0 } },
+    { "query": "display at least 16 inch", "expected": { "spec": "screen", "op": "gte", "value": 16.0 } },
+    { "query": "續航至少 20 小時", "expected": { "spec": "battery", "op": "gte", "value": 20.0 } },
+    { "query": "battery over 18 hours", "expected": { "spec": "battery", "op": "gt", "value": 18.0 } },
+    { "query": "續航低於 5 小時的", "expected": { "spec": "battery", "op": "lt", "value": 5.0 } },
+    { "query": "記憶體至少 32GB", "expected": { "spec": "ram", "op": "gte", "value": 32.0 } },
+    { "query": "memory over 16GB", "expected": { "spec": "ram", "op": "gt", "value": 16.0 } },
+    { "query": "內存 64GB 以上", "expected": { "spec": "ram", "op": "gte", "value": 64.0 } },
+    { "query": "硬碟至少 1TB", "expected": { "spec": "storage", "op": "gte", "value": 1024.0 } },
+    { "query": "storage over 512GB", "expected": { "spec": "storage", "op": "gt", "value": 512.0 } },
+    { "query": "儲存空間不到 256GB", "expected": { "spec": "storage", "op": "lt", "value": 256.0 } },
+    { "query": "2TB 以上儲存空間", "expected": { "spec": "storage", "op": "gte", "value": 2048.0 } },
+
+    { "query": "硬碟 512G 以下", "expected": { "spec": "storage", "op": "lte", "value": 512.0 }, "note": "回歸守門 High-1: 裸 G 不被當 weight 克" },
+    { "query": "記憶體 8G 以上", "expected": { "spec": "ram", "op": "gte", "value": 8.0 }, "note": "回歸守門 High-1 變體" },
+    { "query": "螢幕至少 16 吋，電池 5 小時以下", "expected": null, "note": "回歸守門 High-2: 混合方向 → 空" },
+    { "query": "VRAM 8GB 以上", "expected": null, "note": "回歸守門 Medium-1: VRAM 非系統 ram" },
+
+    { "query": "32GB 以上", "expected": null, "note": "負控: 裸 GB 無 spec 詞" },
+    { "query": "512G 以下", "expected": null, "note": "負控: 裸 G 無 spec 詞" },
+    { "query": "16GB 記憶體", "expected": null, "note": "負控: 無比較詞" },
+    { "query": "有沒有輕一點的筆電", "expected": null, "note": "負控: 無數字" },
+    { "query": "介紹 StarForge X1", "expected": null, "note": "負控: 純產品名" },
+    { "query": "比較 X1 跟 Phantom", "expected": null, "note": "負控: 比較題" }
+  ]
+}
