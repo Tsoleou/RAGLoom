@@ -128,7 +128,7 @@ def run_case(pipeline: RAGPipeline, case: dict, args: argparse.Namespace) -> Cas
 def print_report(results: list[CaseResult], summary: dict, run_meta: dict) -> None:
     bar = "=" * 60
     print(f"\n{bar}")
-    print(f"  RAGLoom Eval Report")
+    print("  RAGLoom Eval Report")
     print(f"  Run: {run_meta['timestamp']}  |  Model: {run_meta['llm_model']}")
     if run_meta.get("judge_model"):
         gate_state = "ON" if run_meta.get("hallucination_gate") else "OFF (observer)"
@@ -212,7 +212,7 @@ def main():
         print(f"[Runner] No cases match (category={args.category}, case={args.case})", file=sys.stderr)
         sys.exit(1)
 
-    print(f"[Runner] Initializing pipeline...")
+    print("[Runner] Initializing pipeline...")
     # from_env so env vars (e.g. RAG_CONSTRAINT_FILTER for A/B eval) take effect.
     pipeline = RAGPipeline(Settings.from_env())
 
@@ -221,7 +221,7 @@ def main():
         pipeline.reset_collection()
         pipeline.ingest(str(KB_PATH))
     else:
-        print(f"[Runner] Skipping ingest (reusing existing collection)")
+        print("[Runner] Skipping ingest (reusing existing collection)")
 
     run_meta = {
         "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),

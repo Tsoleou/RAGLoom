@@ -79,7 +79,7 @@ def build_markdown(resp: dict, graph: dict, graph_name: str, when: str, elapsed_
     cfg = _graph_config(graph)
 
     L: list[str] = []
-    L.append(f"# RAGLoom Eval Report")
+    L.append("# RAGLoom Eval Report")
     L.append("")
     L.append(f"- **Generated:** {when}")
     L.append(f"- **Graph:** `{graph_name}`")

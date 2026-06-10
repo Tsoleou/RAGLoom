@@ -4,8 +4,6 @@
 支援 .txt, .md, .csv, .pdf 格式，將檔案內容讀取為統一的 Document 資料結構。
 """
 
-import csv
-import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import List

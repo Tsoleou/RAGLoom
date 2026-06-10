@@ -11,21 +11,6 @@
 from config.settings import Settings
 from core.loader import load_directory, load_file, load_reference_text
 from core.path_guard import safe_path as _safe_path
-
-# Path guard 共用 Settings 一次（避免每次節點執行都重讀 .env）。允許的根目錄
-# 來自 RAG_ALLOWED_DATA_ROOTS env 或預設 ./knowledge_base、./eval、./chroma_db。
-_PATH_GUARD_SETTINGS: Settings | None = None
-
-
-def _allowed_roots() -> list[str]:
-    global _PATH_GUARD_SETTINGS
-    if _PATH_GUARD_SETTINGS is None:
-        _PATH_GUARD_SETTINGS = Settings.from_env()
-    return _PATH_GUARD_SETTINGS.allowed_data_roots
-
-
-def _guard_path(raw: str, kind: str) -> str:
-    return str(_safe_path(raw, allowed_roots=_allowed_roots(), kind=kind))
 from core.chunker import chunk_document
 from core.embedder import embed_chunks
 from core.vector_store import get_client, create_collection, add_chunks, delete_collection
@@ -79,6 +64,22 @@ from core.eval_metrics import (
 from pathlib import Path
 from core.product_matcher import detect_product_filter, DEFAULT_BRAND_ALIASES
 import json
+
+
+# Path guard 共用 Settings 一次（避免每次節點執行都重讀 .env）。允許的根目錄
+# 來自 RAG_ALLOWED_DATA_ROOTS env 或預設 ./knowledge_base、./eval、./chroma_db。
+_PATH_GUARD_SETTINGS: Settings | None = None
+
+
+def _allowed_roots() -> list[str]:
+    global _PATH_GUARD_SETTINGS
+    if _PATH_GUARD_SETTINGS is None:
+        _PATH_GUARD_SETTINGS = Settings.from_env()
+    return _PATH_GUARD_SETTINGS.allowed_data_roots
+
+
+def _guard_path(raw: str, kind: str) -> str:
+    return str(_safe_path(raw, allowed_roots=_allowed_roots(), kind=kind))
 
 
 def execute_loader(inputs: dict, params: dict) -> dict:
