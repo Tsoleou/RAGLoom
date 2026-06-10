@@ -1,0 +1,19 @@
+{
+  "description": "core.guardrail.check_query 的確定性回歸 case。blocked=true 時 matched 為觸發的關鍵字（小寫）。keywords 省略時用預設品牌清單（asus/acer/msi/hp/dell/apple）。新增 case 直接編這份 JSON。",
+  "cases": [
+    { "query": "推薦一台 asus 的筆電", "blocked": true, "matched": "asus" },
+    { "query": "asus筆電好用嗎", "blocked": true, "matched": "asus", "note": "CJK 邊界：asus 後接中文字仍視為 word boundary" },
+    { "query": "an HP laptop", "blocked": true, "matched": "hp", "note": "大小寫不敏感" },
+    { "query": "ACER vs us", "blocked": true, "matched": "acer" },
+    { "query": "MSI 主機板", "blocked": true, "matched": "msi" },
+    { "query": "the dell is here", "blocked": true, "matched": "dell" },
+
+    { "query": "hpx is fine", "blocked": false, "note": "ASCII 邊界：hp 嵌在 hpx 中、p 後接 \\w，不應誤觸" },
+    { "query": "modelling tips for beginners", "blocked": false, "note": "ASCII 邊界：modelling 含子字串 'dell' 但有 word boundary 保護" },
+    { "query": "championship deal", "blocked": false, "note": "無任何受限品牌（邊界保護）" },
+    { "query": "我們的 Luminos S14 規格", "blocked": false, "note": "純自家產品查詢" },
+
+    { "query": "競品 lenovo 如何", "keywords": ["lenovo"], "blocked": true, "matched": "lenovo", "note": "自訂關鍵字清單" },
+    { "query": "競品 lenovo 如何", "blocked": false, "note": "預設清單不含 lenovo → 不擋" }
+  ]
+}
