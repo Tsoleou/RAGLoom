@@ -38,3 +38,9 @@ Repository = "https://github.com/Tsoleou/RAGLoom"
 # build doesn't try to sweep in frontend/, knowledge_base/, docs/, etc.
 [tool.setuptools]
 packages = ["api", "api.routers", "core", "config", "eval"]
+
+[tool.pytest.ini_options]
+# Offline, deterministic unit tests only — no Ollama. The LLM golden set
+# (eval/runner.py) is run manually, not collected here.
+testpaths = ["eval"]
+python_files = ["test_*.py"]
