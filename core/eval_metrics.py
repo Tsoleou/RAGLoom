@@ -22,7 +22,7 @@ from __future__ import annotations
 import math
 from collections import Counter
 
-from core.vector_store import RetrievalResult
+from core.retrieval_types import RetrievalResult
 
 
 def _product_ids(results: list[RetrievalResult], top_k: int) -> list[str]:

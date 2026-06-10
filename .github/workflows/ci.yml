@@ -32,9 +32,12 @@ jobs:
         with:
           python-version: "3.11"
           cache: pip
-      - run: pip install -e ".[dev]"
-      # Deterministic, offline unit tests (no Ollama). See pyproject testpaths.
-      - run: pytest -q
+      # The unit tests only touch chromadb-free code (RetrievalResult now
+      # lives in core.retrieval_types), so pytest is the only dependency —
+      # no need to install chromadb just to run them. Run from the repo root
+      # so the core/ and eval/ packages resolve without an editable install.
+      - run: pip install pytest
+      - run: python -m pytest -q
 
   frontend:
     name: Frontend (tsc + eslint)

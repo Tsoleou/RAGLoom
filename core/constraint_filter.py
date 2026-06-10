@@ -31,7 +31,7 @@ import json
 import re
 from dataclasses import dataclass
 
-from core.vector_store import RetrievalResult
+from core.retrieval_types import RetrievalResult
 
 
 # ── 空集合短路 ──────────────────────────────────────────────────────

@@ -5,18 +5,12 @@
 """
 
 import chromadb
-from dataclasses import dataclass
 from typing import List, Optional
 
 from core.chunker import Chunk
-
-
-@dataclass
-class RetrievalResult:
-    """代表一筆檢索結果。"""
-    chunk: Chunk
-    score: float       # 相似度分數（越高越相關）
-    distance: float    # 向量距離（越低越近）
+# Re-export so existing `from core.vector_store import RetrievalResult` keeps
+# working; the definition now lives in the chromadb-free retrieval_types module.
+from core.retrieval_types import RetrievalResult
 
 
 def get_client(persist_path: str = "./chroma_db") -> chromadb.ClientAPI:
