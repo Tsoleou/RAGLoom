@@ -113,10 +113,12 @@ ollama pull nomic-embed-text
 
 ### Python Dependencies
 
+Dependencies are declared in `pyproject.toml`. Install the project (editable) with:
+
 ```bash
-pip install fastapi uvicorn pydantic chromadb requests
-# Optional: PDF support
-pip install pymupdf
+pip install -e .              # runtime deps
+pip install -e ".[pdf]"       # + PDF ingest support (pymupdf)
+pip install -e ".[dev]"       # + test / lint tooling (pytest, ruff)
 ```
 
 ### Frontend Dependencies

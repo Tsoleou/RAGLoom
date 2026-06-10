@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ragloom"
+version = "0.1.0"
+description = "Visual RAG pipeline editor for local, on-device product Q&A."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+authors = [{ name = "Tsoleou", email = "tsoleou@gmail.com" }]
+keywords = ["rag", "llm", "ollama", "chromadb", "fastapi", "retrieval"]
+
+# Runtime dependencies actually imported by core/ + api/.
+# .env is parsed by hand in config/settings.py — no python-dotenv needed.
+dependencies = [
+    "fastapi",
+    "starlette",
+    "uvicorn",
+    "pydantic",
+    "chromadb",
+    "requests",
+]
+
+[project.optional-dependencies]
+# PDF ingest — core/loader.py imports `fitz` lazily and raises a helpful
+# error if it's missing, so the dependency stays optional.
+pdf = ["pymupdf"]
+# Dev tooling for the offline test + lint stack (see A-2 / A-3).
+dev = ["pytest", "ruff"]
+
+[project.urls]
+Homepage = "https://github.com/Tsoleou/RAGLoom"
+Repository = "https://github.com/Tsoleou/RAGLoom"
+
+# Flat-layout package discovery: list the Python packages explicitly so the
+# build doesn't try to sweep in frontend/, knowledge_base/, docs/, etc.
+[tool.setuptools]
+packages = ["api", "api.routers", "core", "config", "eval"]
