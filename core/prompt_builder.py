@@ -10,7 +10,7 @@ node 跟 Generator 的 format_type，這邊只負責「context 拼裝」。
 
 from typing import List
 
-from core.vector_store import RetrievalResult
+from core.retrieval_types import RetrievalResult
 
 
 def build_prompt(

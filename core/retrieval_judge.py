@@ -27,7 +27,7 @@ from typing import Iterable
 
 import requests
 
-from core.vector_store import RetrievalResult
+from core.retrieval_types import RetrievalResult
 
 
 # Single call, batched. Truncate each chunk to keep prompt small.

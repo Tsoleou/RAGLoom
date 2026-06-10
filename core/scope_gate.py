@@ -26,7 +26,7 @@ import re
 from typing import Iterable, Optional, Sequence
 
 from core.embedder import embed_query
-from core.vector_store import RetrievalResult
+from core.retrieval_types import RetrievalResult
 
 
 DEFAULT_MIN_SCORE: float = 0.7
