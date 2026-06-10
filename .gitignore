@@ -9,6 +9,12 @@ __pycache__/
 *.pyo
 venv/
 
+# Packaging / test build artifacts
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+
 # ChromaDB local data
 chroma_db/
 test_chroma_db/
