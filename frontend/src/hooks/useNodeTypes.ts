@@ -47,6 +47,9 @@ export function useNodeTypes(): NodeTypesState {
 
   useEffect(() => {
     if (cache) {
+      // cache may have filled between this component's render (useState(cache)
+      // captured null) and the effect firing — sync it so defs isn't stuck null.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setDefs(cache);
       return;
     }

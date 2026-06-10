@@ -6,8 +6,8 @@ LLM 生成模組。
 
 import re
 import requests
-from dataclasses import dataclass, field
-from typing import List, Optional, Union
+from dataclasses import dataclass
+from typing import Optional, Union
 
 
 def _detect_language(text: str) -> str:
