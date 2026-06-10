@@ -1,0 +1,18 @@
+{
+  "description": "core.price_guard.is_price_query 的確定性回歸 case。price=true 代表偵測到價格意圖（EN/ZH）。KB 不含定價，小模型在直接逼問下會編造金額，故此意圖在 code 端攔截。新增 case 直接編這份 JSON。",
+  "cases": [
+    { "query": "How much is the Luminos Pro?", "price": true, "note": "how much" },
+    { "query": "What's the MSRP?", "price": true, "note": "msrp" },
+    { "query": "any discount?", "price": true, "note": "discount" },
+    { "query": "the total cost of ownership", "price": true, "note": "cost（已知會 over-trigger，寧可保守攔下）" },
+    { "query": "$1999 ok", "price": true, "note": "明確金額符號 $\\d" },
+    { "query": "售價多少", "price": true, "note": "售價" },
+    { "query": "這台多少錢", "price": true, "note": "多少錢" },
+    { "query": "有折扣嗎", "price": true, "note": "折扣" },
+
+    { "query": "螢幕多大", "price": false, "note": "負控：'多' 不應誤觸 '多少錢'" },
+    { "query": "這台筆電多重", "price": false, "note": "負控：重量問題非價格" },
+    { "query": "What are the specs?", "price": false, "note": "負控：規格問題" },
+    { "query": "", "price": false, "note": "負控：空字串" }
+  ]
+}
