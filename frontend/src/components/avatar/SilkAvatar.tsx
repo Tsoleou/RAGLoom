@@ -148,13 +148,23 @@ export function SilkAvatar({ state, message, size = 96 }: AvatarProps) {
   return (
     <div className="flex flex-col items-center gap-1.5">
       {/* Scanline container */}
-      <div className="relative rounded-lg overflow-hidden bg-[#0e0e1a] border border-[#1a1a35] p-3">
+      <div
+        className="relative rounded-lg overflow-hidden bg-[#0e0e1a] border border-[#1a1a35] p-3"
+        role="img"
+        aria-label={`Assistant avatar — ${STATUS_TEXT[state]}`}
+      >
         <div
+          aria-hidden="true"
           className="absolute top-0 left-0 right-0 h-px bg-[#3fd0bd] opacity-[0.06]"
           style={{ animation: "scanY 4s linear infinite" }}
         />
-        <canvas ref={canvasRef} style={{ width: size, height: size, display: "block" }} />
+        <canvas
+          aria-hidden="true"
+          ref={canvasRef}
+          style={{ width: size, height: size, display: "block" }}
+        />
         <div
+          aria-hidden="true"
           className="text-[9px] text-center tracking-[2px] mt-1 font-mono"
           style={{ color: rgba(ACCENT[state].main, 1) }}
         >
@@ -164,7 +174,10 @@ export function SilkAvatar({ state, message, size = 96 }: AvatarProps) {
 
       {/* Bubble */}
       {message && (
-        <div className="bg-[#13132a] border border-[#252550] rounded-md px-2.5 py-1.5 text-[10px] text-[#c0c0e0] leading-relaxed max-w-[140px] text-center font-mono">
+        <div
+          role="status"
+          className="bg-[#13132a] border border-[#252550] rounded-md px-2.5 py-1.5 text-[10px] text-[#c0c0e0] leading-relaxed max-w-[140px] text-center font-mono"
+        >
           {message}
         </div>
       )}
