@@ -164,7 +164,7 @@ export function Dashboard() {
       {error && <div className="text-xs text-[#ff5566] mb-4">Failed to load: {error}</div>}
 
       {stats && stats.total === 0 ? (
-        <div className="text-sm text-[#555] mt-10 text-center">
+        <div className="text-sm text-[#888] mt-10 text-center">
           尚無查詢紀錄。到 Chat 分頁問幾個問題後回來看。
         </div>
       ) : stats ? (
@@ -271,7 +271,7 @@ export function Dashboard() {
           </Card>
         </div>
       ) : (
-        <div className="text-sm text-[#555]">Loading…</div>
+        <div className="text-sm text-[#888]">Loading…</div>
       )}
     </div>
   );

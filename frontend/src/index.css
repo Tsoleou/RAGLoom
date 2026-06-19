@@ -15,6 +15,16 @@ html, body, #root {
   50%       { box-shadow: 0 0 14px rgba(0, 204, 170, 0.55); }
 }
 
+/* Indeterminate progress sweep for the batch-eval running state. */
+@keyframes batch-indeterminate {
+  0%   { transform: translateX(-110%); }
+  100% { transform: translateX(320%); }
+}
+
+.batch-indeterminate {
+  animation: batch-indeterminate 1.1s ease-in-out infinite;
+}
+
 /* ── Dark theme overrides for React Flow ───────────────────────── */
 
 .react-flow__background {

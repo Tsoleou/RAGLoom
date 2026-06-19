@@ -127,10 +127,33 @@ export function ChatView() {
   const [profiles, setProfiles] = useState<ProfileMap>({ default: {} });
   const [activeProfile, setActiveProfile] = useState<string>("default");
   const scrollRef = useRef<HTMLDivElement>(null);
+  // Holds the pending avatar-transition timer so a new turn (or unmount) can
+  // cancel it — otherwise overlapping turns leave stale avatar state behind.
+  const avatarTimerRef = useRef<number | null>(null);
+  // Auto-expand the inspection panel only on the first answer of a session;
+  // after that, respect whatever the user toggles.
+  const hasAutoExpandedRef = useRef(false);
+  // Drives the typing indicator's honest, time-based phase copy. No real
+  // sub-step signal exists (single blocking response), so this is generic.
+  const [loadingPhase, setLoadingPhase] = useState<"search" | "generate">("search");
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
   }, [messages, chatLoading]);
+
+  // Clear any pending avatar timer when the component unmounts.
+  useEffect(() => () => {
+    if (avatarTimerRef.current !== null) window.clearTimeout(avatarTimerRef.current);
+  }, []);
+
+  // Time-based loading phase: "searching" first, then "generating" a beat
+  // later. Honest generic copy — there's no real per-step signal to track.
+  useEffect(() => {
+    if (!chatLoading) return;
+    setLoadingPhase("search");
+    const id = window.setTimeout(() => setLoadingPhase("generate"), 700);
+    return () => window.clearTimeout(id);
+  }, [chatLoading]);
 
   // Load profiles on mount
   useEffect(() => {
@@ -190,6 +213,11 @@ export function ChatView() {
 
   async function handleSendText(text: string) {
     if (!text || chatLoading || !loaded) return;
+    // Cancel a still-pending avatar transition from a previous turn.
+    if (avatarTimerRef.current !== null) {
+      window.clearTimeout(avatarTimerRef.current);
+      avatarTimerRef.current = null;
+    }
     setMessages((m) => [...m, { role: "user", content: text }]);
     setInput("");
     setChatLoading(true);
@@ -226,6 +254,16 @@ export function ChatView() {
         setThreshold(data.threshold ?? null);
         setTopK(data.top_k ?? null);
 
+        // First answer of the session pops the inspection panel open so the
+        // pipeline detail is discoverable; later turns respect the user's toggle.
+        if (
+          !hasAutoExpandedRef.current &&
+          ((data.retrieval?.length ?? 0) > 0 || (data.guards?.length ?? 0) > 0)
+        ) {
+          hasAutoExpandedRef.current = true;
+          setShowRetrieval(true);
+        }
+
         if (data.blocked) {
           setAvatarState("error");
           setAvatarMessage("Blocked by guardrail");
@@ -233,17 +271,19 @@ export function ChatView() {
           const theme = getEmotionTheme(emotion);
           setAvatarState("talk");
           setAvatarMessage("");
-          setTimeout(() => {
+          // A short "talk" beat, then reveal the emotion — reactive rather than
+          // a fixed 1.5s wait that lagged behind fast responses.
+          avatarTimerRef.current = window.setTimeout(() => {
             setAvatarState(emotionToAvatarState(emotion));
             setAvatarMessage(`Feeling: ${theme.label.toLowerCase()}`);
-          }, 1500);
+          }, 600);
         } else {
           setAvatarState("talk");
           setAvatarMessage("");
-          setTimeout(() => {
+          avatarTimerRef.current = window.setTimeout(() => {
             setAvatarState("idle");
             setAvatarMessage("");
-          }, 1500);
+          }, 600);
         }
       } else {
         const reason = data.message || "伺服器回傳未知錯誤";
@@ -285,6 +325,7 @@ export function ChatView() {
     setRerank(null);
     setCritique(null);
     setShowRetrieval(false);
+    hasAutoExpandedRef.current = false;
     setKbStatus("idle");
     setKbChunks(null);
     setKbError(null);
@@ -346,7 +387,7 @@ export function ChatView() {
         </div>
 
         {threshold !== null && (
-          <div className="text-[10px] text-[#444] mt-auto font-mono">
+          <div className="text-[10px] text-[#777] mt-auto font-mono">
             threshold: {threshold} · top_k: {topK}
           </div>
         )}
@@ -541,17 +582,22 @@ export function ChatView() {
               animate={{ opacity: 1, x: 0 }}
               className="flex justify-start"
             >
-              <div className="bg-[#0a1a1f] border border-[#1a3540] border-l-2 border-l-[#00ccaa] px-4 py-3 rounded-lg flex items-center gap-1.5 shadow-[0_0_18px_rgba(0,204,170,0.06)]">
-                {[0, 150, 300].map((delay) => (
-                  <span
-                    key={delay}
-                    className="w-1.5 h-1.5 rounded-full bg-[#00ccaa] animate-bounce"
-                    style={{
-                      animationDelay: `${delay}ms`,
-                      boxShadow: "0 0 4px rgba(0,204,170,0.6)",
-                    }}
-                  />
-                ))}
+              <div className="bg-[#0a1a1f] border border-[#1a3540] border-l-2 border-l-[#00ccaa] px-4 py-3 rounded-lg flex items-center gap-2.5 shadow-[0_0_18px_rgba(0,204,170,0.06)]">
+                <span className="flex items-center gap-1.5">
+                  {[0, 150, 300].map((delay) => (
+                    <span
+                      key={delay}
+                      className="w-1.5 h-1.5 rounded-full bg-[#00ccaa] animate-bounce"
+                      style={{
+                        animationDelay: `${delay}ms`,
+                        boxShadow: "0 0 4px rgba(0,204,170,0.6)",
+                      }}
+                    />
+                  ))}
+                </span>
+                <span className="text-[11px] font-mono text-[#00ccaa]/60">
+                  {loadingPhase === "search" ? "檢索知識庫…" : "生成回覆…"}
+                </span>
               </div>
             </motion.div>
           )}
@@ -581,6 +627,7 @@ export function ChatView() {
             onClick={handleClear}
             disabled={chatLoading}
             title="Clear chat history and reset memory"
+            aria-label="Clear chat history and reset memory"
             className="px-3 py-2 border border-[#2a2a2a] hover:bg-[#1a1a1a] hover:border-[#00ccaa]/30 hover:text-[#888] disabled:opacity-40 text-[#555] text-sm rounded self-stretch transition-colors flex items-center gap-1.5 whitespace-nowrap"
           >
             <X size={13} />
@@ -593,6 +640,8 @@ export function ChatView() {
           <div className="border-t border-[#00ccaa]/10 bg-[#141414]">
             <button
               onClick={() => setShowRetrieval((v) => !v)}
+              aria-expanded={showRetrieval}
+              aria-controls="inspection-panel-body"
               className="w-full flex items-center justify-between px-4 py-2 text-[#444] hover:text-[#00ccaa]/60 hover:bg-[#0d1a1f] transition-colors text-xs font-mono"
             >
               <span className="flex items-center gap-3">
@@ -630,7 +679,7 @@ export function ChatView() {
               {showRetrieval ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
             </button>
             {showRetrieval && (
-              <div className="px-4 pb-4 max-h-72 overflow-y-auto space-y-4">
+              <div id="inspection-panel-body" className="px-4 pb-4 max-h-72 overflow-y-auto space-y-4">
                 {guards.length > 0 && (
                   <div>
                     <div className="text-[10px] uppercase tracking-widest text-[#555] mb-1.5">
@@ -727,14 +776,15 @@ export function ChatView() {
                       Retrieval
                     </div>
                     <table className="w-full text-[11px] font-mono">
+                      <caption className="sr-only">檢索結果:每個 chunk 的來源、分數、距離與是否通過門檻</caption>
                       <thead className="text-[#444]">
                         <tr className="border-b border-[#1a3540]">
-                          <th className="text-left py-1 pr-2">#</th>
-                          <th className="text-left py-1 pr-2">Source</th>
-                          <th className="text-right py-1 pr-2">Score</th>
-                          <th className="text-right py-1 pr-2">Dist</th>
-                          <th className="text-center py-1 pr-2">Pass</th>
-                          <th className="text-left py-1">Chunk</th>
+                          <th scope="col" className="text-left py-1 pr-2">#</th>
+                          <th scope="col" className="text-left py-1 pr-2">Source</th>
+                          <th scope="col" className="text-right py-1 pr-2">Score</th>
+                          <th scope="col" className="text-right py-1 pr-2">Dist</th>
+                          <th scope="col" className="text-center py-1 pr-2">Pass</th>
+                          <th scope="col" className="text-left py-1">Chunk</th>
                         </tr>
                       </thead>
                       <tbody>

@@ -1,4 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { ChevronUp, ChevronDown, Download } from "lucide-react";
+import { useToast } from "./ui/Toast";
 
 interface SerializedGraph {
   nodes: Array<{
@@ -71,15 +73,22 @@ function scoreColor(s: number | null | undefined): string {
   return "text-[#e07060]";
 }
 
+type SortKey = "case_id" | "category" | string;
+type SortDir = "asc" | "desc";
+
 export function BatchEvalModal({ open, graph, onClose }: Props) {
+  const toast = useToast();
   const [cases, setCases] = useState<CaseInfo[]>([]);
   const [mode, setMode] = useState<"all" | "category" | "ids">("all");
   const [category, setCategory] = useState<string>("");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [worstK, setWorstK] = useState(3);
   const [running, setRunning] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<BatchResponse | null>(null);
+  const [elapsed, setElapsed] = useState(0);
+  const [sortKey, setSortKey] = useState<SortKey>("case_id");
+  const [sortDir, setSortDir] = useState<SortDir>("asc");
+  const startedRef = useRef(0);
 
   useEffect(() => {
     if (!open) return;
@@ -89,8 +98,29 @@ export function BatchEvalModal({ open, graph, onClose }: Props) {
         setCases(data);
         if (data.length > 0 && !category) setCategory(data[0].category);
       })
-      .catch((e) => setError(`Failed to load cases: ${e}`));
-  }, [open, category]);
+      .catch((e) => toast(`無法載入評估案例:${e}`, "error"));
+  }, [open, category, toast]);
+
+  // Esc closes the modal (only while open).
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") handleClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  // Tick an elapsed-seconds counter while a batch is running. No real progress
+  // signal exists (single blocking request), so we report honest elapsed time.
+  useEffect(() => {
+    if (!running) return;
+    const id = window.setInterval(() => {
+      setElapsed(Math.round((performance.now() - startedRef.current) / 1000));
+    }, 1000);
+    return () => window.clearInterval(id);
+  }, [running]);
 
   const categories = useMemo(() => {
     const set = new Set(cases.map((c) => c.category));
@@ -103,10 +133,31 @@ export function BatchEvalModal({ open, graph, onClose }: Props) {
     return selectedIds.size;
   }, [mode, cases, category, selectedIds]);
 
+  const sortedCases = useMemo(() => {
+    if (!result) return [];
+    const rows = [...result.per_case];
+    const dir = sortDir === "asc" ? 1 : -1;
+    rows.sort((a, b) => {
+      if (sortKey === "case_id") return a.case_id.localeCompare(b.case_id) * dir;
+      if (sortKey === "category") return a.category.localeCompare(b.category) * dir;
+      // Metric column: numeric, with null/undefined scores always sorted last.
+      const av = a.metrics[sortKey]?.score;
+      const bv = b.metrics[sortKey]?.score;
+      if (av === null || av === undefined) return 1;
+      if (bv === null || bv === undefined) return -1;
+      return (av - bv) * dir;
+    });
+    return rows;
+  }, [result, sortKey, sortDir]);
+
+  const ariaSort = (key: SortKey): "ascending" | "descending" | "none" =>
+    sortKey === key ? (sortDir === "asc" ? "ascending" : "descending") : "none";
+
   async function handleRun() {
     setRunning(true);
-    setError(null);
     setResult(null);
+    setElapsed(0);
+    startedRef.current = performance.now();
     try {
       const scope =
         mode === "all"
@@ -127,7 +178,7 @@ export function BatchEvalModal({ open, graph, onClose }: Props) {
       const data = (await res.json()) as BatchResponse;
       setResult(data);
     } catch (e) {
-      setError(String(e));
+      toast(`批次評估失敗:${e}`, "error");
     } finally {
       setRunning(false);
     }
@@ -135,26 +186,66 @@ export function BatchEvalModal({ open, graph, onClose }: Props) {
 
   function handleClose() {
     setResult(null);
-    setError(null);
     onClose();
+  }
+
+  function toggleSort(key: SortKey) {
+    if (key === sortKey) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKey(key);
+      setSortDir("asc");
+    }
+  }
+
+  function exportCsv() {
+    if (!result) return;
+    const header = ["case_id", "category", ...METRIC_ORDER];
+    const rows = result.per_case.map((r) => [
+      r.case_id,
+      r.category,
+      ...METRIC_ORDER.map((m) => {
+        const s = r.metrics[m]?.score;
+        return s === null || s === undefined ? "" : String(s);
+      }),
+    ]);
+    const escape = (v: string) => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
+    const csv = [header, ...rows].map((row) => row.map(escape).join(",")).join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "batch_eval.csv";
+    a.click();
+    URL.revokeObjectURL(url);
   }
 
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-[100] bg-black/60 flex items-center justify-center p-6">
-      <div className="bg-[#1a1a1a] border border-[#a070d0]/40 rounded-lg shadow-2xl max-w-5xl w-full max-h-[90vh] flex flex-col">
+    <div
+      className="fixed inset-0 z-[100] bg-black/60 flex items-center justify-center p-6"
+      onClick={handleClose}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Batch Retrieval Eval"
+        className="bg-[#1a1a1a] border border-[#a070d0]/40 rounded-lg shadow-2xl max-w-5xl w-full max-h-[90vh] flex flex-col"
+        onClick={(e) => e.stopPropagation()}
+      >
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-3 border-b border-[#2a2a2a]">
           <h2 className="text-sm font-bold text-[#d0d0d0]">
             Batch Retrieval Eval
-            <span className="text-[10px] text-[#666] font-normal ml-2">
+            <span className="text-[10px] text-[#888] font-normal ml-2">
               ({graph.nodes.length} nodes / {graph.edges.length} edges)
             </span>
           </h2>
           <button
             onClick={handleClose}
-            className="text-[#666] hover:text-[#aaa] text-lg leading-none"
+            aria-label="Close"
+            className="text-[#888] hover:text-[#ccc] text-lg leading-none"
           >
             ×
           </button>
@@ -237,7 +328,7 @@ export function BatchEvalModal({ open, graph, onClose }: Props) {
                     className="accent-[#a070d0]"
                   />
                   <span className="text-[#d0d0d0]">{c.id}</span>
-                  <span className="text-[#555] text-[10px]">{c.category}</span>
+                  <span className="text-[#888] text-[10px]">{c.category}</span>
                 </label>
               ))}
             </div>
@@ -246,31 +337,41 @@ export function BatchEvalModal({ open, graph, onClose }: Props) {
 
         {/* Results */}
         <div className="flex-1 overflow-y-auto p-5 space-y-5 text-xs">
-          {error && (
-            <div className="px-3 py-2 bg-[#3a1a1a] border border-red-700 text-red-300 rounded">
-              {error}
-            </div>
-          )}
-
-          {!result && !running && !error && (
-            <div className="text-[#555] text-center py-10">
+          {!result && !running && (
+            <div className="text-[#888] text-center py-10">
               Pick a scope and click Run to evaluate the current graph against the golden set.
             </div>
           )}
 
           {running && (
-            <div className="text-[#a070d0] text-center py-10">
-              Running graph for {selectedCount} cases... this can take a while.
+            <div className="py-10 flex flex-col items-center gap-3">
+              <div className="text-[#a070d0]">
+                Running graph for {selectedCount} cases… 已過 {elapsed}s
+              </div>
+              {/* Indeterminate bar — honest "working" signal, no fake percentage. */}
+              <div className="w-64 h-1 rounded-full bg-[#2a2a2a] overflow-hidden">
+                <div className="h-full w-1/3 rounded-full bg-[#a070d0] batch-indeterminate" />
+              </div>
             </div>
           )}
 
           {result && (
             <>
+              <div className="flex justify-end">
+                <button
+                  onClick={exportCsv}
+                  className="flex items-center gap-1.5 rounded border border-[#a070d0]/40 px-2.5 py-1 text-[11px] text-[#c0a0e0] transition-colors hover:bg-[#a070d0]/10"
+                >
+                  <Download size={12} />
+                  Export CSV
+                </button>
+              </div>
+
               {/* Macro averages */}
               <section>
                 <h3 className="text-[#aaa] font-semibold mb-2">
                   Macro Averages
-                  <span className="text-[10px] text-[#555] ml-2 font-normal">
+                  <span className="text-[10px] text-[#888] ml-2 font-normal">
                     across {result.aggregate.total_cases} cases
                     {result.skipped.length > 0 && ` (${result.skipped.length} skipped)`}
                   </span>
@@ -298,11 +399,12 @@ export function BatchEvalModal({ open, graph, onClose }: Props) {
                 <h3 className="text-[#aaa] font-semibold mb-2">Per Category</h3>
                 <div className="overflow-x-auto">
                   <table className="w-full border-collapse text-[11px]">
+                    <caption className="sr-only">各類別的指標平均分數</caption>
                     <thead>
                       <tr className="border-b border-[#333] text-[#888]">
-                        <th className="text-left py-1.5 pr-3 font-medium">Category</th>
+                        <th scope="col" className="text-left py-1.5 pr-3 font-medium">Category</th>
                         {METRIC_ORDER.map((m) => (
-                          <th key={m} className="text-right py-1.5 px-2 font-medium">
+                          <th scope="col" key={m} className="text-right py-1.5 px-2 font-medium">
                             {METRIC_LABELS[m]}
                           </th>
                         ))}
@@ -351,9 +453,9 @@ export function BatchEvalModal({ open, graph, onClose }: Props) {
                           {fmtScore(w.composite_score)}
                         </span>
                         <span className="text-[#d0d0d0]">{w.case_id}</span>
-                        <span className="text-[10px] text-[#666]">{w.category}</span>
+                        <span className="text-[10px] text-[#999]">{w.category}</span>
                         {w.missing_metrics.length > 0 && (
-                          <span className="text-[10px] text-[#666] ml-auto">
+                          <span className="text-[10px] text-[#999] ml-auto">
                             missing: {w.missing_metrics.join(", ")}
                           </span>
                         )}
@@ -367,22 +469,22 @@ export function BatchEvalModal({ open, graph, onClose }: Props) {
               <section>
                 <h3 className="text-[#aaa] font-semibold mb-2">
                   Per Case ({result.per_case.length})
+                  <span className="text-[10px] text-[#888] ml-2 font-normal">點欄位標題可排序</span>
                 </h3>
                 <div className="overflow-x-auto">
                   <table className="w-full border-collapse text-[11px]">
+                    <caption className="sr-only">每個評估案例的各指標分數,點欄位標題可排序</caption>
                     <thead>
                       <tr className="border-b border-[#333] text-[#888] sticky top-0 bg-[#1a1a1a]">
-                        <th className="text-left py-1.5 pr-3 font-medium">Case ID</th>
-                        <th className="text-left py-1.5 pr-3 font-medium">Category</th>
+                        <SortableTh label="Case ID" sortKey="case_id" active={sortKey} dir={sortDir} ariaSort={ariaSort("case_id")} onSort={toggleSort} align="left" />
+                        <SortableTh label="Category" sortKey="category" active={sortKey} dir={sortDir} ariaSort={ariaSort("category")} onSort={toggleSort} align="left" />
                         {METRIC_ORDER.map((m) => (
-                          <th key={m} className="text-right py-1.5 px-2 font-medium">
-                            {METRIC_LABELS[m]}
-                          </th>
+                          <SortableTh key={m} label={METRIC_LABELS[m]} sortKey={m} active={sortKey} dir={sortDir} ariaSort={ariaSort(m)} onSort={toggleSort} align="right" />
                         ))}
                       </tr>
                     </thead>
                     <tbody>
-                      {result.per_case.map((row) => (
+                      {sortedCases.map((row) => (
                         <tr key={row.case_id} className="border-b border-[#2a2a2a]">
                           <td className="py-1.5 pr-3 text-[#d0d0d0]">{row.case_id}</td>
                           <td className="py-1.5 pr-3 text-[#888]">{row.category}</td>
@@ -422,5 +524,43 @@ export function BatchEvalModal({ open, graph, onClose }: Props) {
         </div>
       </div>
     </div>
+  );
+}
+
+function SortableTh({
+  label,
+  sortKey,
+  active,
+  dir,
+  ariaSort,
+  onSort,
+  align,
+}: {
+  label: string;
+  sortKey: SortKey;
+  active: SortKey;
+  dir: SortDir;
+  ariaSort: "ascending" | "descending" | "none";
+  onSort: (key: SortKey) => void;
+  align: "left" | "right";
+}) {
+  const isActive = active === sortKey;
+  return (
+    <th
+      scope="col"
+      aria-sort={ariaSort}
+      className={`py-1.5 px-2 font-medium ${align === "left" ? "text-left pr-3" : "text-right"}`}
+    >
+      <button
+        onClick={() => onSort(sortKey)}
+        className={`inline-flex items-center gap-1 hover:text-[#c0a0e0] transition-colors ${
+          align === "right" ? "flex-row-reverse" : ""
+        } ${isActive ? "text-[#c0a0e0]" : ""}`}
+      >
+        {label}
+        {isActive &&
+          (dir === "asc" ? <ChevronUp size={11} /> : <ChevronDown size={11} />)}
+      </button>
+    </th>
   );
 }
