@@ -24,6 +24,8 @@ import { Avatar } from "./avatar/Avatar";
 import { BatchEvalModal } from "./BatchEvalModal";
 import { useExecution } from "../hooks/useExecution";
 import { useNodeTypes } from "../hooks/useNodeTypes";
+import { useToast } from "./ui/Toast";
+import { useConfirm } from "./ui/ConfirmDialog";
 import {
   parseChatbotOutput,
   emotionToAvatarState,
@@ -221,7 +223,11 @@ export function FlowEditor() {
   const [rfInstance, setRfInstance] = useState<ReactFlowInstance<any> | null>(null);
   const draggedTypeRef = useRef<NodeTypeDef | null>(null);
 
-  const { isRunning, nodeStatuses, execute, cancel } = useExecution();
+  const toast = useToast();
+  const confirm = useConfirm();
+  const { isRunning, nodeStatuses, execute, cancel } = useExecution({
+    onError: (message) => toast(message, "error"),
+  });
   const { byTypeId, loading: nodeTypesLoading } = useNodeTypes();
 
   // Fetch the server-side default graph on mount — single source of truth
@@ -238,7 +244,10 @@ export function FlowEditor() {
         setNodes(materialized.nodes);
         setEdges(materialized.edges);
       })
-      .catch((e) => console.error("[FlowEditor] default graph fetch failed:", e));
+      .catch((e) => {
+        console.error("[FlowEditor] default graph fetch failed:", e);
+        if (!cancelled) toast("無法載入預設 pipeline,請從 Palette 拖曳節點或載入 Profile", "warning");
+      });
     return () => {
       cancelled = true;
     };
@@ -302,7 +311,17 @@ export function FlowEditor() {
   const onConnect = useCallback(
     (connection: Connection) => {
       if (!isConnectionValid(connection, nodes)) {
-        console.warn("[FlowEditor] Invalid connection: port types don't match");
+        const srcType = nodes
+          .find((n) => n.id === connection.source)
+          ?.data.outputs.find((p: { name: string }) => p.name === connection.sourceHandle)
+          ?.dataType;
+        const tgtType = nodes
+          .find((n) => n.id === connection.target)
+          ?.data.inputs.find((p: { name: string }) => p.name === connection.targetHandle)
+          ?.dataType;
+        const detail =
+          srcType && tgtType ? `(${srcType} → ${tgtType})` : "";
+        toast(`無法連接:資料型別不符 ${detail}`.trim(), "warning");
         return;
       }
       // Style new edges by their source-port dataType so the primary data
@@ -327,7 +346,7 @@ export function FlowEditor() {
         )
       );
     },
-    [nodes, setEdges]
+    [nodes, setEdges, toast]
   );
 
   // Reconnect: drag an edge endpoint to reroute, or to empty space to delete.
@@ -434,11 +453,18 @@ export function FlowEditor() {
     execute(nodes, edges);
   }, [nodes, edges, execute, setNodes]);
 
-  const handleClear = useCallback(() => {
+  const handleClear = useCallback(async () => {
+    if (nodes.length === 0 && edges.length === 0) return;
+    const ok = await confirm({
+      title: "清空整個 pipeline?",
+      message: "畫布上的所有節點與連線都會被移除,此動作無法復原。",
+      confirmLabel: "清空",
+    });
+    if (!ok) return;
     setNodes([]);
     setEdges([]);
     setSelectedNodeId(null);
-  }, [setNodes, setEdges]);
+  }, [nodes.length, edges.length, confirm, setNodes, setEdges]);
 
   // Profile state: each profile carries the full {nodes, edges} so chat and
   // editor see the same setup. Same shape as /api/default-graph.
@@ -475,13 +501,23 @@ export function FlowEditor() {
     setSavedProfiles((prev) => ({ ...prev, [name]: { graph } }));
   }, [nodes, edges]);
 
-  const handleLoadProfile = useCallback((name: string) => {
+  const handleLoadProfile = useCallback(async (name: string) => {
     const graph = savedProfiles[name]?.graph;
     if (!graph) return;
+    if (nodes.length > 0) {
+      const ok = await confirm({
+        title: `載入 Profile "${name}"?`,
+        message: "目前畫布上的節點與連線會被此 Profile 取代。",
+        confirmLabel: "載入並取代",
+        danger: false,
+      });
+      if (!ok) return;
+    }
     const { nodes: restoredNodes, edges: restoredEdges } = materializeServerGraph(graph, byTypeId);
     setNodes(restoredNodes);
     setEdges(restoredEdges);
-  }, [savedProfiles, setNodes, setEdges, byTypeId]);
+    toast(`已載入 Profile "${name}"`, "success");
+  }, [savedProfiles, nodes.length, confirm, toast, setNodes, setEdges, byTypeId]);
 
   // Build the SerializedGraph for the batch-eval modal. Same shape we send
   // when saving a profile, computed on demand.
@@ -640,6 +676,20 @@ export function FlowEditor() {
             />
             <Background variant={BackgroundVariant.Dots} gap={16} size={1} color="#333" />
           </ReactFlow>
+
+          {/* Empty-canvas zero state — guides first-run users. Non-interactive
+              so it never blocks drops; hidden once any node exists. */}
+          {nodes.length === 0 && !nodeTypesLoading && (
+            <div className="absolute inset-0 z-[4] flex items-center justify-center pointer-events-none">
+              <div className="max-w-xs rounded-lg border border-dashed border-[#e07830]/30 bg-[#1a1a1a]/70 px-6 py-5 text-center">
+                <div className="text-sm font-medium text-[#c0c0c0]">空白畫布</div>
+                <div className="mt-1.5 text-xs leading-relaxed text-[#777]">
+                  從左側 <span className="text-[#e07830]">Node Palette</span> 拖曳節點開始,
+                  或從上方工具列 <span className="text-[#00ccaa]">Load</span> 一個 Profile。
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Avatar — bottom-right, to the left of MiniMap */}
           <div className="absolute bottom-3 right-[220px] z-[5] pointer-events-none">

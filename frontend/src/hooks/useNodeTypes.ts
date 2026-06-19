@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { NodeTypeDef } from "../types/pipeline";
 
 /**
@@ -39,6 +39,8 @@ export interface NodeTypesState {
   byTypeId: Record<string, NodeTypeDef>;
   loading: boolean;
   error: string | null;
+  /** Drop the cache and re-fetch — wired to the palette's retry button. */
+  reload: () => void;
 }
 
 export function useNodeTypes(): NodeTypesState {
@@ -61,6 +63,16 @@ export function useNodeTypes(): NodeTypesState {
     };
   }, []);
 
+  const reload = useCallback(() => {
+    cache = null;
+    inFlight = null;
+    setError(null);
+    setDefs(null);
+    loadNodeTypes()
+      .then((data) => setDefs(data))
+      .catch((e) => setError(String(e)));
+  }, []);
+
   const byTypeId: Record<string, NodeTypeDef> = {};
   (defs ?? []).forEach((d) => {
     byTypeId[d.typeId] = d;
@@ -71,5 +83,6 @@ export function useNodeTypes(): NodeTypesState {
     byTypeId,
     loading: defs === null && error === null,
     error,
+    reload,
   };
 }

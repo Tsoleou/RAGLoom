@@ -1,8 +1,9 @@
 import { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Send, X, Database, ChevronDown, ChevronUp, Trash2 } from "lucide-react";
+import { Send, X, Database, ChevronDown, ChevronUp, Trash2, RotateCw } from "lucide-react";
 import { Avatar } from "./avatar/Avatar";
 import type { AvatarState } from "./avatar/types";
+import { useConfirm } from "./ui/ConfirmDialog";
 import {
   parseChatbotOutput,
   emotionToAvatarState,
@@ -14,6 +15,10 @@ interface ChatMessage {
   content: string;
   blocked?: boolean;
   emotion?: string;
+  /** Marks an assistant message that reports a failure, so the bubble can
+   *  render a retry affordance that re-sends `retryText`. */
+  error?: boolean;
+  retryText?: string;
 }
 
 interface RetrievalRow {
@@ -101,6 +106,7 @@ const containerVariants = {
 };
 
 export function ChatView() {
+  const confirm = useConfirm();
   const [avatarState, setAvatarState] = useState<AvatarState>("idle");
   const [avatarMessage, setAvatarMessage] = useState("");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -147,6 +153,12 @@ export function ChatView() {
   }
 
   async function handleDeleteProfile(name: string) {
+    const ok = await confirm({
+      title: `刪除 Profile "${name}"?`,
+      message: "此 Profile 會被永久移除,無法復原。",
+      confirmLabel: "刪除",
+    });
+    if (!ok) return;
     await fetch(`/api/profiles/${name}`, { method: "DELETE" });
     const updated = { ...profiles };
     delete updated[name];
@@ -234,20 +246,28 @@ export function ChatView() {
           }, 1500);
         }
       } else {
+        const reason = data.message || "伺服器回傳未知錯誤";
         setMessages((m) => [
           ...m,
-          { role: "assistant", content: `Error: ${data.message || "unknown"}` },
+          { role: "assistant", content: `⚠ 查詢失敗:${reason}`, error: true, retryText: text },
         ]);
         setAvatarState("error");
-        setAvatarMessage(data.message || "Error");
+        setAvatarMessage(reason);
       }
-    } catch (e) {
+    } catch {
+      // Almost always a network/fetch failure (backend down, proxy error).
+      // Show actionable copy instead of a raw `TypeError: Failed to fetch`.
       setMessages((m) => [
         ...m,
-        { role: "assistant", content: `Error: ${e}` },
+        {
+          role: "assistant",
+          content: "⚠ 無法連線到伺服器,請確認後端是否運行後再試一次。",
+          error: true,
+          retryText: text,
+        },
       ]);
       setAvatarState("error");
-      setAvatarMessage(String(e));
+      setAvatarMessage("無法連線到伺服器");
     } finally {
       setChatLoading(false);
     }
@@ -414,7 +434,7 @@ export function ChatView() {
 
           {messages.length === 0 && (
             <div className="flex flex-col items-center gap-4 px-6">
-              {loaded && (
+              {loaded ? (
                 <motion.div
                   className="flex flex-col gap-2 w-full max-w-md"
                   variants={containerVariants}
@@ -434,6 +454,20 @@ export function ChatView() {
                     </motion.button>
                   ))}
                 </motion.div>
+              ) : (
+                kbStatus !== "loading" && (
+                  // KB not loaded yet → point at the left "Load KB" button instead
+                  // of leaving the panel blank (suggested questions are hidden).
+                  <div className="max-w-md rounded-lg border border-dashed border-[#00ccaa]/25 bg-[#0d1a1f]/50 px-5 py-4 text-center">
+                    <div className="text-sm text-[#c0e0d8]">
+                      {kbStatus === "error" ? "知識庫載入失敗" : "尚未載入知識庫"}
+                    </div>
+                    <div className="mt-1.5 text-xs leading-relaxed text-[#6a8a84]">
+                      請先點左側的 <span className="text-[#e07830]">Load KB</span>{" "}
+                      按鈕載入產品資料,{kbStatus === "error" ? "再試一次。" : "才能開始提問。"}
+                    </div>
+                  </div>
+                )
               )}
             </div>
           )}
@@ -453,6 +487,8 @@ export function ChatView() {
                     className={`max-w-[75%] px-4 py-2.5 rounded-lg text-sm whitespace-pre-wrap ${
                       m.role === "user"
                         ? "bg-[#e07830] text-white shadow-[0_0_14px_rgba(224,120,48,0.25)]"
+                        : m.error
+                        ? "bg-[#2a1212] text-[#ffb3bd] border border-[#ff5566]/30 border-l-2 border-l-[#ff5566]"
                         : m.blocked
                         ? "bg-[#2a1a10] text-[#f0c070] border border-[#f0a040]/30 border-l-2 border-l-[#f0a040]"
                         : "bg-[#0a1a1f] text-[#d0e8e0] border border-[#1a3540] border-l-2 border-l-[#00ccaa] shadow-[0_0_18px_rgba(0,204,170,0.06)]"
@@ -482,6 +518,16 @@ export function ChatView() {
                       </div>
                     )}
                     {m.content}
+                    {m.error && m.retryText && (
+                      <button
+                        onClick={() => handleSendText(m.retryText!)}
+                        disabled={chatLoading || !loaded}
+                        className="mt-2 flex items-center gap-1.5 rounded border border-[#ff5566]/40 px-2 py-1 text-[11px] text-[#ffb3bd] transition-colors hover:bg-[#ff5566]/10 disabled:opacity-40"
+                      >
+                        <RotateCw size={11} />
+                        重試
+                      </button>
+                    )}
                   </div>
                 </motion.div>
               );
