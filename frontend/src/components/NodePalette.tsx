@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Search } from "lucide-react";
+import { Search, RotateCw } from "lucide-react";
 import { useNodeTypes } from "../hooks/useNodeTypes";
 import { NodeIcon } from "../utils/nodeIcons";
 import type { NodeTypeDef } from "../types/pipeline";
@@ -18,7 +18,7 @@ interface Props {
 }
 
 export function NodePalette({ onDragStart }: Props) {
-  const { nodeTypes, loading, error } = useNodeTypes();
+  const { nodeTypes, loading, error, reload } = useNodeTypes();
   const [query, setQuery] = useState("");
 
   const grouped = useMemo(() => {
@@ -64,7 +64,16 @@ export function NodePalette({ onDragStart }: Props) {
           <div className="text-[10px] text-[#555] py-2">Loading node types…</div>
         )}
         {error && (
-          <div className="text-[10px] text-[#f0a040] py-2">Failed to load: {error}</div>
+          <div className="py-2 space-y-1.5">
+            <div className="text-[10px] text-[#f0a040]">無法載入節點類型:{error}</div>
+            <button
+              onClick={reload}
+              className="flex items-center gap-1.5 rounded border border-[#f0a040]/40 px-2 py-1 text-[10px] text-[#f0a040] transition-colors hover:bg-[#f0a040]/10"
+            >
+              <RotateCw size={11} />
+              重試
+            </button>
+          </div>
         )}
         {noResults && (
           <div className="text-[10px] text-[#555] py-2">No nodes match “{query}”.</div>

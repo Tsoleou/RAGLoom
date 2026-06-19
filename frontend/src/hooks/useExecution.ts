@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { FlowNode, FlowEdge, NodeStatus, WsMessage } from "../types/pipeline";
 
 const API_BASE = "";
@@ -9,15 +9,31 @@ export interface ExecutionState {
   nodeStatuses: Record<string, { status: NodeStatus; preview: string }>;
 }
 
-export function useExecution() {
+interface UseExecutionOptions {
+  /** Called when execution fails (backend error or dropped/failed socket)
+   *  so the UI can surface it instead of only logging to the console. */
+  onError?: (message: string) => void;
+}
+
+export function useExecution(options: UseExecutionOptions = {}) {
   const [state, setState] = useState<ExecutionState>({
     isRunning: false,
     nodeStatuses: {},
   });
   const wsRef = useRef<WebSocket | null>(null);
+  // Keep the latest callback without re-creating `execute` (which many
+  // memoized handlers depend on) every render.
+  const onErrorRef = useRef(options.onError);
+  useEffect(() => {
+    onErrorRef.current = options.onError;
+  }, [options.onError]);
+  // Distinguishes an intentional close (complete / cancel) from a dropped
+  // connection so `onclose` only reports the latter.
+  const expectedCloseRef = useRef(false);
 
   const execute = useCallback((nodes: FlowNode[], edges: FlowEdge[]) => {
     // 清除舊狀態
+    expectedCloseRef.current = false;
     setState({ isRunning: true, nodeStatuses: {} });
 
     // 準備送給後端的 graph 資料
@@ -46,6 +62,7 @@ export function useExecution() {
       const msg: WsMessage = JSON.parse(event.data);
 
       if ("type" in msg && msg.type === "complete") {
+        expectedCloseRef.current = true;
         setState((prev) => ({ ...prev, isRunning: false }));
         ws.close();
         return;
@@ -53,7 +70,9 @@ export function useExecution() {
 
       if ("type" in msg && msg.type === "error") {
         console.error("[Execution] Error:", msg.message);
+        expectedCloseRef.current = true;
         setState((prev) => ({ ...prev, isRunning: false }));
+        onErrorRef.current?.(msg.message || "Pipeline execution failed");
         ws.close();
         return;
       }
@@ -72,15 +91,23 @@ export function useExecution() {
 
     ws.onerror = (err) => {
       console.error("[Execution] WebSocket error:", err);
+      expectedCloseRef.current = true;
       setState((prev) => ({ ...prev, isRunning: false }));
+      onErrorRef.current?.("無法連線到執行伺服器,請確認後端是否運行");
     };
 
     ws.onclose = () => {
+      // A drop mid-run (server crash, network) never sends a complete/error
+      // frame — report it so the run doesn't just silently stop.
+      if (!expectedCloseRef.current) {
+        onErrorRef.current?.("執行連線中斷,pipeline 未完成");
+      }
       setState((prev) => ({ ...prev, isRunning: false }));
     };
   }, []);
 
   const cancel = useCallback(() => {
+    expectedCloseRef.current = true;
     if (wsRef.current) {
       wsRef.current.close();
       wsRef.current = null;
