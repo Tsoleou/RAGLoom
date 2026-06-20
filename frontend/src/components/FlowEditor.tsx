@@ -53,7 +53,7 @@ const CONTEXT_DATA_TYPES = new Set([
   "query",
   "format_hint",
   "system_prompt",
-  "reference_data",
+  "reference",
   "product_id",
 ]);
 
