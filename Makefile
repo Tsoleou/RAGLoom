@@ -6,8 +6,11 @@
 build:           ## 建映像（含 build 前端）
 	docker compose build
 
-up:              ## 起 ollama + 首次 pull 模型 + api（首跑會自動 ingest）
+up:              ## 起 ollama + 首次 pull 模型 + api（首跑會自動 ingest；CPU）
 	docker compose up
+
+up-gpu:          ## 展場機（NVIDIA GPU）：容器內 ollama 吃 GPU，4B 才跑得動
+	docker compose -f docker-compose.yml -f docker-compose.gpu.yml up
 
 down:            ## 停掉所有服務
 	docker compose down

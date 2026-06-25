@@ -1,0 +1,18 @@
+# GPU override —— 展場機（有 NVIDIA GPU + nvidia-container-toolkit）專用。
+# 與 base compose 疊用，讓容器內的 ollama 服務吃 GPU；4B 模型才跑得夠快、
+# 不會撞 generator timeout。
+#
+#   docker compose -f docker-compose.yml -f docker-compose.gpu.yml up
+#   （或直接 `make up-gpu`）
+#
+# 前置：展場機需先裝好 NVIDIA driver 與 NVIDIA Container Toolkit，
+# 並 `nvidia-smi` 看得到 GPU。
+services:
+  ollama:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]

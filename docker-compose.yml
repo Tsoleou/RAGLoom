@@ -14,14 +14,8 @@ services:
       timeout: 5s
       retries: 30
       start_period: 20s
-    # ── GPU 加速（有 NVIDIA GPU 時取消註解；CPU-only 下 4B 推論會偏慢）──
-    # deploy:
-    #   resources:
-    #     reservations:
-    #       devices:
-    #         - driver: nvidia
-    #           count: all
-    #           capabilities: [gpu]
+    # GPU 加速見 docker-compose.gpu.yml（展場機用 `make up-gpu` 疊上去）。
+    # 純 CPU 跑 4B 會慢到 generator 撞 timeout，展場機務必用 GPU。
 
   # 一次性服務：等 ollama 起來後 pull 預設模型，跑完即退出。
   # 客戶之後要加模型：docker compose exec ollama ollama pull <model>
@@ -45,6 +39,9 @@ services:
     environment:
       - RAG_OLLAMA_BASE_URL=http://ollama:11434
       - RAG_SERVE_MODE=1
+      # 操作者面密碼（Basic Auth）。在 .env 或 shell 設 RAG_ADMIN_PASSWORD；
+      # 留空 = 不擋 /admin（只靠 kiosk 鎖定）。訪客 chat 端點永遠免密碼。
+      - RAG_ADMIN_PASSWORD=${RAG_ADMIN_PASSWORD:-}
     volumes:
       - ./chroma_db:/app/chroma_db          # 向量庫持久化（空 → 首次自動建）
       - ./knowledge_base:/app/knowledge_base # 客戶丟文件進來、到 /admin 按 Load KB 重索引

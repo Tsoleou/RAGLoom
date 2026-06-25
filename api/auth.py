@@ -15,12 +15,13 @@ lifespan 太晚；所以在 module import 時就把 Settings 載好。
 read that same attribute. Never re-create it elsewhere — import this object.
 """
 
+import base64
 import secrets
 from pathlib import Path
 from urllib.parse import urlparse
 
 from fastapi import Request, status
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from config.settings import Settings
@@ -28,6 +29,54 @@ from config.settings import Settings
 _LOCAL_ENV_PATH = Path(".env.local")
 _TOKEN_HEADER = "X-Local-Token"
 _settings: Settings = Settings.from_env()
+
+# 訪客 kiosk 唯一會打的 /api 端點 —— admin 密碼開啟時，只有這些免密碼。
+# 其餘 /api/* 一律視為管理類，需要 admin 憑證。
+_KIOSK_API: set[tuple[str, str]] = {
+    ("POST", "/api/chat/query"),
+    ("POST", "/api/chat/reset"),
+    ("GET", "/api/profiles"),
+}
+
+
+def is_kiosk_api(method: str, path: str) -> bool:
+    return (method, path) in _KIOSK_API
+
+
+def check_admin_auth(headers) -> bool:
+    """管理類請求的憑證檢查。`headers` 是 request/websocket 的 .headers。
+
+    放行條件（任一）：
+      - Basic Auth 密碼與 RAG_ADMIN_PASSWORD 相符（操作者瀏覽器跳窗輸入，
+        之後同源請求/WS 會自動帶上）。
+      - 帶對的 X-Local-Token（dev vite proxy / curl，行為不變）。
+    未設 RAG_ADMIN_PASSWORD → 不擋（向後相容），交還給呼叫端的其他判斷。
+    """
+    admin_pw = _settings.api_admin_password
+    if not admin_pw:
+        return True
+    auth = headers.get("authorization", "")
+    if auth.startswith("Basic "):
+        try:
+            decoded = base64.b64decode(auth[6:]).decode("utf-8", "replace")
+            _, _, pw = decoded.partition(":")
+            if secrets.compare_digest(pw, admin_pw):
+                return True
+        except (ValueError, TypeError):
+            pass
+    token = _settings.api_local_token
+    if token and secrets.compare_digest(headers.get(_TOKEN_HEADER, ""), token):
+        return True
+    return False
+
+
+def admin_challenge() -> Response:
+    """回 401 + WWW-Authenticate，讓瀏覽器跳出 Basic Auth 密碼框。"""
+    return Response(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        content="admin authentication required",
+        headers={"WWW-Authenticate": 'Basic realm="RAGLoom Admin"'},
+    )
 
 
 def _ensure_api_token(settings: Settings) -> str:
@@ -75,6 +124,15 @@ class LocalTokenMiddleware(BaseHTTPMiddleware):
         if request.method == "OPTIONS":
             return await call_next(request)
         if not request.url.path.startswith("/api/"):
+            return await call_next(request)
+
+        # 管理類端點：設了 admin 密碼就需要憑證，且不吃 same-origin 放行
+        # （否則同源訪客脫離 kiosk 也能打）。訪客 kiosk 端點不受影響。
+        if _settings.api_admin_password and not is_kiosk_api(
+            request.method, request.url.path
+        ):
+            if not check_admin_auth(request.headers):
+                return admin_challenge()
             return await call_next(request)
 
         expected = _settings.api_local_token

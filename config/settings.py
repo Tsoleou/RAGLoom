@@ -85,6 +85,9 @@ class Settings:
     # ── API 安全 ────────────────────────────────────────────────
     # 空字串 = server 啟動時自動生成，並寫進 .env.local 給前端 vite 讀
     api_local_token: str = field(default_factory=lambda: _env("RAG_API_TOKEN", str, ""))
+    # 操作者面密碼（Basic Auth）。設了就擋 /admin 頁面與所有管理類 API；
+    # 訪客 kiosk 端點（chat query/reset、GET profiles）不受影響。空 = 不擋。
+    api_admin_password: str = field(default_factory=lambda: _env("RAG_ADMIN_PASSWORD", str, ""))
     # CORS allowed origins（逗號分隔；預設只接受本機 vite dev server）
     api_allowed_origins: list[str] = field(
         default_factory=lambda: _env(
