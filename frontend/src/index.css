@@ -8,6 +8,19 @@ html, body, #root {
   font-family: "Noto Sans TC", system-ui, sans-serif;
 }
 
+/* ── Respect the user's reduced-motion preference ──────────────────
+   Neutralises CSS-driven motion (the infinite batch-eval sweep, glow
+   pulses, Tailwind animate-bounce, transitions). Framer Motion is handled
+   separately via <MotionConfig reducedMotion="user"> at the app root. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
 /* ── Cyberpunk glow animations ─────────────────────────────────── */
 
 @keyframes glow-pulse {

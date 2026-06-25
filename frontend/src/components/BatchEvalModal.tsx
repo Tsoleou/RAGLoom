@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronUp, ChevronDown, Download } from "lucide-react";
 import { useToast } from "./ui/Toast";
+import { useFocusTrap } from "../hooks/useFocusTrap";
 
 interface SerializedGraph {
   nodes: Array<{
@@ -85,10 +86,15 @@ export function BatchEvalModal({ open, graph, onClose }: Props) {
   const [worstK, setWorstK] = useState(3);
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<BatchResponse | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [elapsed, setElapsed] = useState(0);
   const [sortKey, setSortKey] = useState<SortKey>("case_id");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
   const startedRef = useRef(0);
+  const dialogRef = useRef<HTMLDivElement>(null);
+
+  // Esc + focus trap + focus restore for the dialog.
+  useFocusTrap(open, dialogRef, () => handleClose());
 
   useEffect(() => {
     if (!open) return;
@@ -98,19 +104,12 @@ export function BatchEvalModal({ open, graph, onClose }: Props) {
         setCases(data);
         if (data.length > 0 && !category) setCategory(data[0].category);
       })
-      .catch((e) => toast(`無法載入評估案例:${e}`, "error"));
+      .catch((e) => {
+        const msg = `無法載入評估案例:${e}`;
+        toast(msg, "error");
+        setError(msg);
+      });
   }, [open, category, toast]);
-
-  // Esc closes the modal (only while open).
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") handleClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
 
   // Tick an elapsed-seconds counter while a batch is running. No real progress
   // signal exists (single blocking request), so we report honest elapsed time.
@@ -156,6 +155,7 @@ export function BatchEvalModal({ open, graph, onClose }: Props) {
   async function handleRun() {
     setRunning(true);
     setResult(null);
+    setError(null);
     setElapsed(0);
     startedRef.current = performance.now();
     try {
@@ -178,7 +178,12 @@ export function BatchEvalModal({ open, graph, onClose }: Props) {
       const data = (await res.json()) as BatchResponse;
       setResult(data);
     } catch (e) {
-      toast(`批次評估失敗:${e}`, "error");
+      // Batch runs are long and the user may have looked away — surface the
+      // failure both as an immediate toast and as a persistent block in the
+      // results area, so it's still there when they return.
+      const msg = `批次評估失敗:${e}`;
+      toast(msg, "error");
+      setError(msg);
     } finally {
       setRunning(false);
     }
@@ -186,6 +191,7 @@ export function BatchEvalModal({ open, graph, onClose }: Props) {
 
   function handleClose() {
     setResult(null);
+    setError(null);
     onClose();
   }
 
@@ -228,6 +234,7 @@ export function BatchEvalModal({ open, graph, onClose }: Props) {
       onClick={handleClose}
     >
       <div
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-label="Batch Retrieval Eval"
@@ -337,9 +344,20 @@ export function BatchEvalModal({ open, graph, onClose }: Props) {
 
         {/* Results */}
         <div className="flex-1 overflow-y-auto p-5 space-y-5 text-xs">
-          {!result && !running && (
+          {!result && !running && !error && (
             <div className="text-[#888] text-center py-10">
               Pick a scope and click Run to evaluate the current graph against the golden set.
+            </div>
+          )}
+
+          {error && !running && (
+            <div
+              role="alert"
+              className="rounded border border-[#ff5566]/40 bg-[#2a1618] px-4 py-3 text-[#ffb3bd]"
+            >
+              <div className="font-semibold text-[#ff8d9b]">執行失敗</div>
+              <div className="mt-1 whitespace-pre-wrap break-words leading-relaxed">{error}</div>
+              <div className="mt-1 text-[10px] text-[#c98a92]">調整範圍後可重新執行。</div>
             </div>
           )}
 

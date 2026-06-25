@@ -2,6 +2,7 @@ import { createContext, useContext, useState, useCallback, useEffect, useRef } f
 import type { ReactNode } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { AlertTriangle } from "lucide-react";
+import { useFocusTrap } from "../../hooks/useFocusTrap";
 
 interface ConfirmOptions {
   title: string;
@@ -39,19 +40,16 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
   const confirm = useCallback(
     (opts: ConfirmOptions) =>
       new Promise<boolean>((resolve) => {
+        // A still-open confirm being replaced by a new one would otherwise leave
+        // its awaiter hanging forever — resolve it as cancelled first.
+        pendingRef.current?.resolve(false);
         setPending({ ...opts, resolve });
       }),
     [],
   );
 
-  useEffect(() => {
-    if (!pending) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") close(false);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [pending, close]);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useFocusTrap(!!pending, dialogRef, () => close(false));
 
   return (
     <ConfirmContext.Provider value={{ confirm }}>
@@ -67,6 +65,7 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
             onClick={() => close(false)}
           >
             <motion.div
+              ref={dialogRef}
               role="alertdialog"
               aria-modal="true"
               className="w-full max-w-sm rounded-lg border border-[#f0a040]/40 bg-[#1a1a1a] p-5 shadow-2xl"
@@ -100,7 +99,7 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
                   {pending.cancelLabel ?? "取消"}
                 </button>
                 <button
-                  autoFocus
+                  data-autofocus
                   onClick={() => close(true)}
                   className={`rounded px-3 py-1.5 text-xs font-medium text-white transition-colors ${
                     pending.danger === false
