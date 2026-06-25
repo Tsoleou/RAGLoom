@@ -136,6 +136,16 @@ export function ChatView() {
   // Drives the typing indicator's honest, time-based phase copy. No real
   // sub-step signal exists (single blocking response), so this is generic.
   const [loadingPhase, setLoadingPhase] = useState<"search" | "generate">("search");
+  // Per-tab conversation id. The server keys each visitor's history / dialogue
+  // stage / intent on this, so concurrent booth visitors never overwrite each
+  // other's state. Generated once on mount; rotated on Clear to start a fresh
+  // server-side session. Older browsers without crypto.randomUUID fall back to
+  // a timestamp+random id (uniqueness across tabs is all we need).
+  const sessionIdRef = useRef<string>(
+    typeof crypto !== "undefined" && crypto.randomUUID
+      ? crypto.randomUUID()
+      : `s-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+  );
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
@@ -227,7 +237,7 @@ export function ChatView() {
       const res = await fetch("/api/chat/query", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: text }),
+        body: JSON.stringify({ message: text, session_id: sessionIdRef.current }),
       });
       const data: QueryResponse = await res.json();
       if (data.status === "ok" && data.reply !== undefined) {
@@ -318,7 +328,17 @@ export function ChatView() {
   }
 
   async function handleClear() {
-    await fetch("/api/chat/reset", { method: "POST" });
+    await fetch("/api/chat/reset", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ session_id: sessionIdRef.current }),
+    });
+    // Rotate to a fresh server-side session so the next turn starts clean even
+    // if the just-dropped id were somehow reused.
+    sessionIdRef.current =
+      typeof crypto !== "undefined" && crypto.randomUUID
+        ? crypto.randomUUID()
+        : `s-${Date.now()}-${Math.random().toString(36).slice(2)}`;
     setMessages([]);
     setRetrieval([]);
     setGuards([]);

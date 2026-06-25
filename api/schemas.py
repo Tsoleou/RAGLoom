@@ -36,6 +36,15 @@ class ExecuteRequest(BaseModel):
 class ChatQueryRequest(BaseModel):
     # 4000 字夠長到塞段落，又能擋自殘式 DoS。
     message: str = Field(..., max_length=4000)
+    # 每位訪客一條對話狀態（history / stage / intent）。前端進場產生一個
+    # UUID，每輪都帶上。空字串 → 落到共用的 "default" session（相容退路，
+    # 但會回到舊的跨會話污染行為）。長度設限擋掉 client 亂塞超長 key。
+    session_id: str = Field("", max_length=100)
+
+
+class ChatResetRequest(BaseModel):
+    # 只清掉自己這條 session，不影響其他在線訪客。
+    session_id: str = Field("", max_length=100)
 
 
 class ChatProfileRequest(BaseModel):
