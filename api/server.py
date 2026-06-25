@@ -14,12 +14,18 @@ import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, Response
+from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from api.auth import LocalTokenMiddleware, _ensure_api_token, _settings
+from api.auth import (
+    LocalTokenMiddleware,
+    _ensure_api_token,
+    _settings,
+    admin_challenge,
+    check_admin_auth,
+)
 from api.profiles_store import _migrate_legacy_profiles_if_needed
 from api.routers import chat, dashboard, eval, graph, profiles
 
@@ -86,7 +92,10 @@ if _DIST.is_dir():
         return FileResponse(_DIST / "chat.html")
 
     @app.get("/admin")
-    def _serve_admin():
+    def _serve_admin(request: Request):
+        # 操作者面：設了 admin 密碼就要 Basic Auth 才載入（擋脫離 kiosk 的訪客）。
+        if _settings.api_admin_password and not check_admin_auth(request.headers):
+            return admin_challenge()
         return FileResponse(_DIST / "index.html")
 
     @app.get("/favicon.svg")

@@ -160,30 +160,99 @@ Open `http://localhost:5173` to access the UI. Use the top-right switcher to tog
 
 ## Deployment (展場 Kiosk)
 
-The dev workflow above runs two processes (Vite + uvicorn). For shipping to a customer — e.g. an exhibition booth PC — use the bundled `docker-compose.yml`, which packages **Ollama (local LLM) + the API + the built frontend** into a one-command, reproducible deploy:
+The dev workflow above runs two processes (Vite + uvicorn). For shipping to a customer — e.g. an exhibition-booth PC — the bundled compose files package **Ollama (local LLM) + the API + the built frontend** into a one-command, reproducible, self-contained deploy.
 
-```bash
-make up        # build frontend, pull models on first run, serve everything
-```
-
-This brings up three services: `ollama` (local model runtime, models persisted in a named volume), a one-shot `model-init` that pulls `gemma3:4b` + `nomic-embed-text`, and `api` (FastAPI serving both faces). First boot pulls ~3 GB of models and auto-ingests `knowledge_base/` into the vector store; subsequent restarts skip both.
-
-Two faces, one origin:
+It serves **two faces from one origin** (port 8000):
 
 | URL | Face | For |
 | --- | --- | --- |
-| `http://<booth>:8000/` | **Kiosk** — chat-only, no admin controls | Visitors (run the browser in kiosk/locked mode pointed here) |
-| `http://<booth>:8000/admin` | **Operator** — editor / dashboard / chat with admin | The booth operator |
+| `http://<host>:8000/` | **Kiosk** — chat-only, no admin controls | Visitors (run the browser in kiosk/locked mode pointed here) |
+| `http://<host>:8000/admin` | **Operator** — editor / dashboard / chat with admin | The booth operator |
 
-**Auth in serve mode.** Served pages call `/api/*` same-origin (no Vite proxy, no token), so the API allows same-origin requests without the `X-Local-Token` header; cross-origin browser requests are still rejected. Visitor↔operator isolation relies on **locking the kiosk browser to `/`**, not on app-level auth — this is a single-machine, non-public deployment.
+### Platform support
 
-**Letting the customer extend it:**
+A 4B model needs a GPU to be responsive. **Whether the GPU is reachable from inside Docker depends on the OS** — this is the single most important deployment decision:
+
+| Platform | Supported | Command | Speed |
+| --- | --- | --- | --- |
+| **Windows + NVIDIA GPU** (recommended booth) | ✅ Full, self-contained | `make up-gpu` (run inside WSL2) | Fast |
+| **Linux + NVIDIA GPU** | ✅ Full, self-contained (best) | `make up-gpu` | Fast |
+| **macOS** (Apple Silicon) | ⚠️ Yes, but different — Docker **can't** pass through the Metal GPU | Native Ollama + `make up` (see below) | Fast (native Metal) |
+| **Any machine, CPU only** | ⚠️ Runs but too slow for a live kiosk — the generator exceeds Ollama's timeout and answers don't return | `make up` | Too slow |
+
+### Prerequisites
+
+- **All platforms:** Docker Desktop (or Docker Engine + the compose plugin on Linux).
+- **Windows + NVIDIA GPU (booth):** Docker Desktop set to the **WSL2 backend**, plus the **NVIDIA Container Toolkit** installed *inside the WSL2 distro* ([guide](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html)). Verify with `nvidia-smi` in WSL2. Run the `make`/compose commands from inside WSL2 (`make` ships there; native PowerShell/cmd has no `make` — use the raw `docker compose …` form below if needed).
+- **Linux + NVIDIA GPU:** NVIDIA driver + NVIDIA Container Toolkit; `nvidia-smi` works.
+- **macOS:** Docker can't expose Metal to Linux containers, so don't use `make up-gpu`. Instead run Ollama **natively** on the Mac (it uses Metal) and let only the API container talk to it — see "macOS" below.
+
+### Start (Windows / Linux with NVIDIA GPU)
+
+```bash
+make up-gpu     # build frontend, pull models on first run, serve everything (GPU)
+```
+
+`make up-gpu` overlays `docker-compose.gpu.yml` (the GPU reservation) on the base compose. Equivalent raw command if you don't have `make`:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml up
+```
+
+This brings up three services: `ollama` (model runtime, models persisted in a named volume), a one-shot `model-init` that pulls `gemma3:4b` + `nomic-embed-text`, and `api` (FastAPI serving both faces). **First boot pulls ~3 GB of models and auto-ingests `knowledge_base/`** into the vector store; later restarts skip both. Do the first run somewhere with stable internet — at the venue it then runs offline.
+
+### Start (macOS)
+
+Docker can't reach the Metal GPU, so run Ollama natively and point only the API at it:
+
+```bash
+# 1. Install + run Ollama natively (https://ollama.com), then pull the models
+ollama pull gemma3:4b && ollama pull nomic-embed-text
+
+# 2. Run just the API container against the host's Ollama
+docker run --rm -p 8000:8000 \
+  -e RAG_SERVE_MODE=1 \
+  -e RAG_OLLAMA_BASE_URL=http://host.docker.internal:11434 \
+  -e RAG_ADMIN_PASSWORD=<your-password> \
+  $(docker build -q -t ragloom-api .)
+```
+
+(Or skip Docker entirely and run the two-process dev workflow above — it uses the native Ollama too.) macOS is best treated as a dev/demo machine, not the GPU booth.
+
+### Operator password (recommended for booths)
+
+Set `RAG_ADMIN_PASSWORD` to gate the operator surface with HTTP Basic Auth — it protects the `/admin` page **and** every admin-class API (ingest, profile activate/delete, editor execute + WS, eval, dashboard). The three visitor endpoints (`POST /api/chat/query`, `POST /api/chat/reset`, `GET /api/profiles`) stay open, so the kiosk works without a password. The operator enters the password once per browser. For compose, put it in a root `.env`:
+
+```bash
+# .env (repo root)
+RAG_ADMIN_PASSWORD=your-strong-password
+```
+
+Leave it unset to fall back to kiosk-lockdown only. **Auth model:** served pages call `/api/*` same-origin, so the API allows same-origin requests without the `X-Local-Token` header (cross-origin browser requests are still rejected); visitor↔operator isolation otherwise relies on **locking the kiosk browser to `/`**. This is a single-machine, non-public deployment.
+
+### Kiosk browser lockdown
+
+Point a kiosk/full-screen browser at the visitor URL so visitors can't reach `/admin`:
+
+```bash
+chrome --kiosk --app=http://localhost:8000/
+```
+
+### Day-to-day operation
+
+| Command | Action |
+| --- | --- |
+| `make up-gpu` / `make up` | Start (GPU booth / CPU) |
+| `make down` | Stop all services |
+| `make logs` | Follow the API log |
+| `make pull-model M=<model>` | Pull an extra model into the Ollama service |
+
+### Letting the customer extend it
+
 - **Models** — `make pull-model M=<model>` (e.g. `llama3.2`), then pick it in the operator editor's node config (or set `RAG_LLM_MODEL` and restart). Models persist across restarts.
 - **Knowledge base** — drop files into the host `knowledge_base/` folder (bind-mounted), then click **Load KB** in `/admin` to re-index.
 - **Profiles / pipeline** — edit in the operator editor; saved under the mounted `config/profiles/`.
 - ⚠️ **Swapping the embedder invalidates the vector store** (dimension mismatch → garbage retrieval). After changing `RAG_EMBEDDING_MODEL`, you **must re-ingest** (Load KB). Swapping the LLM needs no re-index.
-
-> GPU: by default inference is CPU-only (4B may be slow for a live kiosk). If the booth PC has an NVIDIA GPU, uncomment the `deploy.resources` block in `docker-compose.yml`.
 
 ## Knowledge Base
 
