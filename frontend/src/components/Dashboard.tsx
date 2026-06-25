@@ -158,7 +158,7 @@ export function Dashboard() {
       a.click();
       URL.revokeObjectURL(url);
     } catch (e) {
-      setError(`匯出失敗: ${e}`);
+      setError(`匯出失敗: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
       setExporting(false);
     }
