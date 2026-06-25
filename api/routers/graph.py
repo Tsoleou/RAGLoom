@@ -50,10 +50,13 @@ async def ws_execute(ws: WebSocket):
     Server 逐步推送: {"nodeId": "xxx", "status": "running|done|error", "preview": "..."}
     最後推送: {"type": "complete", "results": {...}}
     """
-    # ws/execute 是管理動作（editor Run）。設了 admin 密碼時要憑證：操作者在
-    # /admin 通過 Basic Auth 後，瀏覽器會在同源 ws 握手自動帶上 Authorization。
+    # ws/execute 是管理動作（editor Run）。設了 admin 密碼時需要憑證，但「同源」
+    # 也放行 —— 因為瀏覽器不一定會在 WS 握手帶上快取的 Basic 憑證（各家行為不一），
+    # 而這條 WS 本來就是從已通過 Basic Auth 的 /admin 同源開啟。跨 origin 仍需憑證。
+    # 取捨：脫離 kiosk 的同源訪客理論上能連 ws/execute；單機展場可接受，且 /admin
+    # 頁面本身仍被密碼擋住。
     if _settings.api_admin_password:
-        if not check_admin_auth(ws.headers):
+        if not (is_same_origin(ws.headers) or check_admin_auth(ws.headers)):
             await ws.close(code=4401)
             return
     else:
