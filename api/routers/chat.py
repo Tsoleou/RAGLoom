@@ -1,10 +1,19 @@
 """Chat endpoints: ingest the knowledge base, run a single turn through the
 active profile's graph, and reset multi-turn memory.
 
-Owns the `chat_pipe` singleton — the only state these three endpoints share.
+`chat_pipe` is a shared singleton holding the expensive, genuinely-shared RAG
+machinery (Chroma collection, spec table, product-id cache). Per-visitor
+conversation state (history / dialogue stage / prev intent) does NOT live there
+— it lives in the per-session store below, keyed by the client-supplied
+session_id, so two visitors talking at once never overwrite each other's stage,
+history, or intent. The graph engine is stateless; the chat endpoint feeds the
+right session's state in and writes the updated state back per turn.
 """
 
+import threading
 import time
+from collections import OrderedDict
+from dataclasses import dataclass, field
 
 from fastapi import APIRouter
 
@@ -17,14 +26,57 @@ from api.default_graph import _default_chat_graph
 from api.engine import execute_graph
 from api.profiles_store import _load_profiles
 from api.query_log import log_query
-from api.schemas import ChatQueryRequest
+from api.schemas import ChatQueryRequest, ChatResetRequest
 from config.settings import Settings
 from core.pipeline import RAGPipeline
 
 router = APIRouter()
 
 # ── Chat pipeline (singleton) ──────────────────────────────────────
+# Shared, expensive-to-build RAG machinery only. NOT conversation state.
 chat_pipe: RAGPipeline | None = None
+
+
+# ── Per-session conversation state ─────────────────────────────────
+@dataclass
+class _ChatSession:
+    """One visitor's multi-turn state. Mirrors the three fields the chat path
+    used to borrow off chat_pipe."""
+    messages: list = field(default_factory=list)  # Ollama history (user+assistant)
+    stage: int = 0          # DialogueFlow current script stage
+    intent: str = ""        # prev turn's routed intent (topic-switch detection)
+
+
+# Bounded LRU of sessions. Capped so a long-running booth doesn't trade the
+# singleton race for an unbounded dict leak (same class as the query-log TTL
+# finding). Oldest idle session is evicted when full; an active session is
+# move-to-end'd each turn so it survives. The lock guards get-or-create +
+# eviction — the only structural mutations of the store; per-turn field writes
+# touch a single session object the frontend's chatLoading guard already
+# serializes per tab.
+_SESSIONS: "OrderedDict[str, _ChatSession]" = OrderedDict()
+_SESSIONS_LOCK = threading.Lock()
+_MAX_SESSIONS = 500
+# id-less requests (old frontend / curl) share this one session — keeps
+# single-user behavior intact, but this path alone retains the old shared
+# state. Intentional fallback, not an oversight.
+_DEFAULT_SESSION_ID = "default"
+
+
+def _get_session(session_id: str) -> _ChatSession:
+    """Fetch (or lazily create) the session for this id, marking it most-recently
+    used. Evicts the oldest session when over capacity."""
+    sid = session_id.strip() or _DEFAULT_SESSION_ID
+    with _SESSIONS_LOCK:
+        sess = _SESSIONS.get(sid)
+        if sess is None:
+            sess = _ChatSession()
+            _SESSIONS[sid] = sess
+            while len(_SESSIONS) > _MAX_SESSIONS:
+                _SESSIONS.popitem(last=False)  # drop oldest idle session
+        else:
+            _SESSIONS.move_to_end(sid)  # keep active session from being evicted
+        return sess
 
 
 @router.post("/api/chat/ingest")
@@ -53,6 +105,8 @@ def chat_query(req: ChatQueryRequest):
     if not req.message.strip():
         return {"status": "error", "message": "Empty message"}
 
+    session = _get_session(req.session_id)
+
     profiles_data = _load_profiles()
     active = profiles_data.get("active") or "default"
     profile = (profiles_data.get("profiles") or {}).get(active) or {}
@@ -64,11 +118,11 @@ def chat_query(req: ChatQueryRequest):
 
     # Multi-turn memory: the graph engine is stateless, so the chat endpoint
     # owns conversation history. Feed prior turns into the generator node and
-    # write the updated history back after the turn. History lives on the
-    # chat_pipe singleton and is cleared by /api/chat/reset.
+    # write the updated history back after the turn. History lives on this
+    # visitor's session and is cleared by /api/chat/reset.
     gen_id = next((n["id"] for n in nodes if n.get("type") == "generator"), None)
     if gen_id is not None:
-        overrides.setdefault(gen_id, {})["messages"] = chat_pipe._messages
+        overrides.setdefault(gen_id, {})["messages"] = session.messages
 
     # DialogueFlow script: stage + previous intent persist across turns the same
     # way history does. Feed the current stage, the prior turn's intent (so the
@@ -78,9 +132,9 @@ def chat_query(req: ChatQueryRequest):
     df_id = next((n["id"] for n in nodes if n.get("type") == "dialogue_flow"), None)
     if df_id is not None:
         df_over = overrides.setdefault(df_id, {})
-        df_over["stage_state"] = chat_pipe._stage
-        df_over["prev_intent"] = chat_pipe._intent
-        df_over["messages"] = chat_pipe._messages
+        df_over["stage_state"] = session.stage
+        df_over["prev_intent"] = session.intent
+        df_over["messages"] = session.messages
 
     # IntentRouter classifies from the query edge (dynamic, no override needed).
     ir_id = next((n["id"] for n in nodes if n.get("type") == "intent_router"), None)
@@ -114,15 +168,15 @@ def chat_query(req: ChatQueryRequest):
     # DialogueFlow already consumed the prior value as prev_intent, and this turn's
     # intent becomes next turn's prev.
     if turn_committed:
-        chat_pipe._messages = gen_answer.messages
+        session.messages = gen_answer.messages
         if ir_id is not None:
             ir_intent = (outputs.get(ir_id) or {}).get("intent")
             if isinstance(ir_intent, str):
-                chat_pipe._intent = ir_intent
+                session.intent = ir_intent
         if df_id is not None:
             df_stage = (outputs.get(df_id) or {}).get("stage_out")
             if isinstance(df_stage, int):
-                chat_pipe._stage = df_stage
+                session.stage = df_stage
 
     response = _extract_chat_response(nodes, results, outputs, settings)
 
@@ -147,8 +201,13 @@ def chat_query(req: ChatQueryRequest):
 
 
 @router.post("/api/chat/reset")
-def chat_reset():
-    """Clear multi-turn conversation context."""
-    if chat_pipe is not None:
-        chat_pipe.reset_conversation()
+def chat_reset(req: ChatResetRequest):
+    """Clear one visitor's multi-turn conversation context.
+
+    Drops only the caller's session so resetting one booth tab can't wipe
+    another in-flight visitor's history / dialogue stage.
+    """
+    sid = req.session_id.strip() or _DEFAULT_SESSION_ID
+    with _SESSIONS_LOCK:
+        _SESSIONS.pop(sid, None)
     return {"status": "ok"}
