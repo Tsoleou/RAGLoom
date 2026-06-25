@@ -1,5 +1,5 @@
-import { useState, useEffect } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { useState, useRef } from "react";
+import { motion, AnimatePresence, MotionConfig } from "framer-motion";
 import { HelpCircle, X } from "lucide-react";
 import { FlowEditor } from "./components/FlowEditor";
 import { ChatView } from "./components/ChatView";
@@ -7,6 +7,7 @@ import { Dashboard } from "./components/Dashboard";
 import { Avatar } from "./components/avatar/Avatar";
 import { ToastProvider } from "./components/ui/Toast";
 import { ConfirmProvider } from "./components/ui/ConfirmDialog";
+import { useFocusTrap } from "./hooks/useFocusTrap";
 
 type View = "editor" | "chat" | "dashboard";
 
@@ -43,64 +44,66 @@ function App() {
         : "Analyze user query behavior";
 
   return (
-    <ToastProvider>
-      <ConfirmProvider>
-        <div className="h-screen flex flex-col bg-[#1a1a1a]">
-          {/* Title bar */}
-          <header className="px-6 py-3 bg-[#202020] border-b border-[#2a2a2a] flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <h1 className="text-lg font-bold text-[#e0e0e0]">
-                <span style={{ textShadow: "0 0 18px rgba(0,204,170,0.5)" }}>RAGLoom</span>
-              </h1>
-              <span className="text-xs text-[#666]">{hint}</span>
-            </div>
-
-            <div className="flex items-center gap-2">
-              {/* View switcher */}
-              <div className="flex rounded-md border border-[#333] overflow-hidden text-xs">
-                <button
-                  onClick={() => setView("editor")}
-                  aria-current={view === "editor"}
-                  className={`px-3 py-1.5 transition-colors ${view === "editor" ? "bg-[#e07830] text-white" : "bg-[#252525] text-[#888] hover:bg-[#2a2a2a]"}`}
-                >
-                  Editor
-                </button>
-                <button
-                  onClick={() => setView("chat")}
-                  aria-current={view === "chat"}
-                  className={`px-3 py-1.5 transition-colors ${view === "chat" ? "bg-[#e07830] text-white" : "bg-[#252525] text-[#888] hover:bg-[#2a2a2a]"}`}
-                >
-                  Chat
-                </button>
-                <button
-                  onClick={() => setView("dashboard")}
-                  aria-current={view === "dashboard"}
-                  className={`px-3 py-1.5 transition-colors ${view === "dashboard" ? "bg-[#e07830] text-white" : "bg-[#252525] text-[#888] hover:bg-[#2a2a2a]"}`}
-                >
-                  Dashboard
-                </button>
+    <MotionConfig reducedMotion="user">
+      <ToastProvider>
+        <ConfirmProvider>
+          <div className="h-screen flex flex-col bg-[#1a1a1a]">
+            {/* Title bar */}
+            <header className="px-6 py-3 bg-[#202020] border-b border-[#2a2a2a] flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <h1 className="text-lg font-bold text-[#e0e0e0]">
+                  <span style={{ textShadow: "0 0 18px rgba(0,204,170,0.5)" }}>RAGLoom</span>
+                </h1>
+                <span className="text-xs text-[#666]">{hint}</span>
               </div>
 
-              <button
-                onClick={() => setHelpOpen(true)}
-                aria-label="Help & keyboard shortcuts"
-                title="Help & keyboard shortcuts"
-                className="flex items-center justify-center w-7 h-7 rounded-md border border-[#333] bg-[#252525] text-[#888] hover:text-[#00ccaa] hover:bg-[#2a2a2a] transition-colors"
-              >
-                <HelpCircle size={15} />
-              </button>
-            </div>
-          </header>
+              <div className="flex items-center gap-2">
+                {/* View switcher */}
+                <div className="flex rounded-md border border-[#333] overflow-hidden text-xs">
+                  <button
+                    onClick={() => setView("editor")}
+                    aria-current={view === "editor"}
+                    className={`px-3 py-1.5 transition-colors ${view === "editor" ? "bg-[#e07830] text-white" : "bg-[#252525] text-[#888] hover:bg-[#2a2a2a]"}`}
+                  >
+                    Editor
+                  </button>
+                  <button
+                    onClick={() => setView("chat")}
+                    aria-current={view === "chat"}
+                    className={`px-3 py-1.5 transition-colors ${view === "chat" ? "bg-[#e07830] text-white" : "bg-[#252525] text-[#888] hover:bg-[#2a2a2a]"}`}
+                  >
+                    Chat
+                  </button>
+                  <button
+                    onClick={() => setView("dashboard")}
+                    aria-current={view === "dashboard"}
+                    className={`px-3 py-1.5 transition-colors ${view === "dashboard" ? "bg-[#e07830] text-white" : "bg-[#252525] text-[#888] hover:bg-[#2a2a2a]"}`}
+                  >
+                    Dashboard
+                  </button>
+                </div>
 
-          {/* Main content */}
-          <main className="flex-1 overflow-hidden">
-            {view === "editor" ? <FlowEditor /> : view === "chat" ? <ChatView /> : <Dashboard />}
-          </main>
+                <button
+                  onClick={() => setHelpOpen(true)}
+                  aria-label="Help & keyboard shortcuts"
+                  title="Help & keyboard shortcuts"
+                  className="flex items-center justify-center w-7 h-7 rounded-md border border-[#333] bg-[#252525] text-[#888] hover:text-[#00ccaa] hover:bg-[#2a2a2a] transition-colors"
+                >
+                  <HelpCircle size={15} />
+                </button>
+              </div>
+            </header>
 
-          <HelpModal open={helpOpen} onClose={() => setHelpOpen(false)} />
-        </div>
-      </ConfirmProvider>
-    </ToastProvider>
+            {/* Main content */}
+            <main className="flex-1 overflow-hidden">
+              {view === "editor" ? <FlowEditor /> : view === "chat" ? <ChatView /> : <Dashboard />}
+            </main>
+
+            <HelpModal open={helpOpen} onClose={() => setHelpOpen(false)} />
+          </div>
+        </ConfirmProvider>
+      </ToastProvider>
+    </MotionConfig>
   );
 }
 
@@ -118,14 +121,8 @@ const SHORTCUTS: { keys: string; desc: string }[] = [
 ];
 
 function HelpModal({ open, onClose }: { open: boolean; onClose: () => void }) {
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useFocusTrap(open, dialogRef, onClose);
 
   return (
     <AnimatePresence>
@@ -139,6 +136,7 @@ function HelpModal({ open, onClose }: { open: boolean; onClose: () => void }) {
           onClick={onClose}
         >
           <motion.div
+            ref={dialogRef}
             role="dialog"
             aria-modal="true"
             aria-label="Help"
