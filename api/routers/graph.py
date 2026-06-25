@@ -7,7 +7,7 @@ import secrets
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
-from api.auth import _TOKEN_HEADER, _settings
+from api.auth import _TOKEN_HEADER, _settings, is_same_origin
 from api.default_graph import _default_chat_graph
 from api.engine import execute_graph
 from api.node_registry import get_node_types_json
@@ -50,8 +50,10 @@ async def ws_execute(ws: WebSocket):
     Server 逐步推送: {"nodeId": "xxx", "status": "running|done|error", "preview": "..."}
     最後推送: {"type": "complete", "results": {...}}
     """
+    # 服務模式同源放行（與 HTTP middleware 同邏輯）；admin editor 在 / 服務時
+    # 開的 ws 是同源，不帶 token 也能連。跨 origin（dev proxy）仍需 token。
     expected = _settings.api_local_token
-    if expected:
+    if expected and not is_same_origin(ws.headers):
         provided = ws.headers.get(_TOKEN_HEADER, "")
         if not secrets.compare_digest(provided, expected):
             await ws.close(code=4401)

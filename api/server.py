@@ -10,14 +10,24 @@ api/{chat_service,eval_service,profiles_store,default_graph,schemas}.py.
     uvicorn api.server:app --reload --port 8000
 """
 
+import os
 from contextlib import asynccontextmanager
+from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from api.auth import LocalTokenMiddleware, _ensure_api_token, _settings
 from api.profiles_store import _migrate_legacy_profiles_if_needed
 from api.routers import chat, dashboard, eval, graph, profiles
+
+# 服務模式旗標：由 compose / Makefile serve 設 RAG_SERVE_MODE=1。開啟時 lifespan
+# 會自動初始化 chat_pipe（kiosk 免手動 Load KB）。dev --reload 與 offline pytest
+# 不設此旗標 → 不自動連 Ollama，行為與既有完全一致。
+_SERVE_MODE = bool(os.environ.get("RAG_SERVE_MODE"))
+_DIST = Path("frontend/dist")
 
 
 # ── Lifespan ───────────────────────────────────────────────────────
@@ -27,6 +37,13 @@ async def lifespan(app: FastAPI):
     _ensure_api_token(_settings)
     # Migration 是 idempotent，lifespan 跑一次足夠；endpoint 內不再呼叫。
     _migrate_legacy_profiles_if_needed()
+    if _SERVE_MODE:
+        try:
+            count = chat.init_chat_pipe_if_needed()
+            print(f"[Server] Serve mode: chat_pipe ready ({count} chunks)")
+        except Exception as e:
+            # 別讓初始化失敗擋掉整個 server；admin 仍可手動 Load KB 重試。
+            print(f"[Server] WARNING: auto-init chat_pipe failed: {e}")
     print("[Server] RAGLoom API started")
     yield
     print("[Server] RAGLoom API stopped")
@@ -54,3 +71,28 @@ app.include_router(chat.router)
 app.include_router(profiles.router)
 app.include_router(eval.router)
 app.include_router(dashboard.router)
+
+# ── Static frontend ────────────────────────────────────────────────
+# 服務模式：FastAPI 同時供應 built 前端與 API（單一 origin、免 CORS）。
+#   /        → chat.html  訪客面（純對話 kiosk）
+#   /admin   → index.html 操作者面（editor / dashboard / chat with admin）
+# Routers 已先註冊，/api/* 優先比對；這裡只掛明確路徑與 /assets，不 mount("/")
+# 以免蓋掉 API。dist 不存在（純 dev、未 build）就跳過，保護 --reload 流程。
+if _DIST.is_dir():
+    app.mount("/assets", StaticFiles(directory=_DIST / "assets"), name="assets")
+
+    @app.get("/")
+    def _serve_kiosk():
+        return FileResponse(_DIST / "chat.html")
+
+    @app.get("/admin")
+    def _serve_admin():
+        return FileResponse(_DIST / "index.html")
+
+    @app.get("/favicon.svg")
+    def _serve_favicon():
+        # public/ 目前沒有 favicon，缺檔回 404 而非讓 FileResponse 拋 500。
+        fav = _DIST / "favicon.svg"
+        return FileResponse(fav) if fav.is_file() else Response(status_code=404)
+else:
+    print("[Server] frontend/dist 不存在，略過靜態服務（dev 請用 vite npm run dev）")

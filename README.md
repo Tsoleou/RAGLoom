@@ -158,6 +158,33 @@ Open `http://localhost:5173` to access the UI. Use the top-right switcher to tog
 
 > **Start the backend before the frontend.** On first launch the backend generates a local API token and writes it to `.env.local`; the Vite dev server reads it (`VITE_API_TOKEN`) and injects it as an `X-Local-Token` header on every `/api` request. All `/api/*` endpoints require this token, so if you started Vite before the token file existed, restart Vite after the backend prints `Generated API token`. To call the API directly (curl / Postman), pass the token from `.env.local` as an `X-Local-Token` header.
 
+## Deployment (展場 Kiosk)
+
+The dev workflow above runs two processes (Vite + uvicorn). For shipping to a customer — e.g. an exhibition booth PC — use the bundled `docker-compose.yml`, which packages **Ollama (local LLM) + the API + the built frontend** into a one-command, reproducible deploy:
+
+```bash
+make up        # build frontend, pull models on first run, serve everything
+```
+
+This brings up three services: `ollama` (local model runtime, models persisted in a named volume), a one-shot `model-init` that pulls `gemma3:4b` + `nomic-embed-text`, and `api` (FastAPI serving both faces). First boot pulls ~3 GB of models and auto-ingests `knowledge_base/` into the vector store; subsequent restarts skip both.
+
+Two faces, one origin:
+
+| URL | Face | For |
+| --- | --- | --- |
+| `http://<booth>:8000/` | **Kiosk** — chat-only, no admin controls | Visitors (run the browser in kiosk/locked mode pointed here) |
+| `http://<booth>:8000/admin` | **Operator** — editor / dashboard / chat with admin | The booth operator |
+
+**Auth in serve mode.** Served pages call `/api/*` same-origin (no Vite proxy, no token), so the API allows same-origin requests without the `X-Local-Token` header; cross-origin browser requests are still rejected. Visitor↔operator isolation relies on **locking the kiosk browser to `/`**, not on app-level auth — this is a single-machine, non-public deployment.
+
+**Letting the customer extend it:**
+- **Models** — `make pull-model M=<model>` (e.g. `llama3.2`), then pick it in the operator editor's node config (or set `RAG_LLM_MODEL` and restart). Models persist across restarts.
+- **Knowledge base** — drop files into the host `knowledge_base/` folder (bind-mounted), then click **Load KB** in `/admin` to re-index.
+- **Profiles / pipeline** — edit in the operator editor; saved under the mounted `config/profiles/`.
+- ⚠️ **Swapping the embedder invalidates the vector store** (dimension mismatch → garbage retrieval). After changing `RAG_EMBEDDING_MODEL`, you **must re-ingest** (Load KB). Swapping the LLM needs no re-index.
+
+> GPU: by default inference is CPU-only (4B may be slow for a live kiosk). If the booth PC has an NVIDIA GPU, uncomment the `deploy.resources` block in `docker-compose.yml`.
+
 ## Knowledge Base
 
 Place product documents in the `knowledge_base/` directory. Supported formats: `.txt`, `.md`, `.csv`, `.pdf`. The pipeline auto-selects a chunking strategy based on file type.

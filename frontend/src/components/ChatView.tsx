@@ -105,14 +105,19 @@ const containerVariants = {
   visible: { transition: { staggerChildren: 0.07 } },
 };
 
-export function ChatView() {
+/** `admin` (default true) keeps the full operator surface — Load-KB button,
+ *  profile switcher/delete, ingest receipt. The chat-only kiosk entry passes
+ *  `admin={false}`: those controls are hidden and the KB is treated as already
+ *  loaded (the served backend auto-initialises chat_pipe at startup), so the
+ *  send button isn't gated behind a Load-KB click a visitor can't see. */
+export function ChatView({ admin = true }: { admin?: boolean } = {}) {
   const confirm = useConfirm();
   const [avatarState, setAvatarState] = useState<AvatarState>("idle");
   const [avatarMessage, setAvatarMessage] = useState("");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   type KBStatus = "idle" | "loading" | "loaded" | "error";
-  const [kbStatus, setKbStatus] = useState<KBStatus>("idle");
+  const [kbStatus, setKbStatus] = useState<KBStatus>(admin ? "idle" : "loaded");
   const [kbChunks, setKbChunks] = useState<number | null>(null);
   const [kbError, setKbError] = useState<string | null>(null);
   const [chatLoading, setChatLoading] = useState(false);
@@ -346,7 +351,9 @@ export function ChatView() {
     setCritique(null);
     setShowRetrieval(false);
     hasAutoExpandedRef.current = false;
-    setKbStatus("idle");
+    // Kiosk mode has no Load-KB button, so dropping back to "idle" would
+    // permanently disable send. Keep it "loaded" there.
+    setKbStatus(admin ? "idle" : "loaded");
     setKbChunks(null);
     setKbError(null);
     setAvatarState("idle");
@@ -368,43 +375,47 @@ export function ChatView() {
           <Avatar state={avatarState} message={avatarMessage} size={128} />
         </div>
 
-        <button
-          onClick={handleIngest}
-          disabled={kbStatus === "loading"}
-          className="flex items-center justify-center gap-2 px-3 py-2 bg-[#e07830] hover:bg-[#f08840] disabled:opacity-50 text-white text-sm rounded transition-colors"
-        >
-          <Database size={14} />
-          {loaded ? "Reload KB" : "Load KB"}
-        </button>
+        {admin && (
+          <button
+            onClick={handleIngest}
+            disabled={kbStatus === "loading"}
+            className="flex items-center justify-center gap-2 px-3 py-2 bg-[#e07830] hover:bg-[#f08840] disabled:opacity-50 text-white text-sm rounded transition-colors"
+          >
+            <Database size={14} />
+            {loaded ? "Reload KB" : "Load KB"}
+          </button>
+        )}
 
-        {/* Profile selector */}
-        <div>
-          <div className="text-[10px] uppercase tracking-widest text-[#555] mb-2">Profile</div>
-          <div className="flex flex-col gap-1">
-            {Object.keys(profiles).map((name) => (
-              <div
-                key={name}
-                className={`flex items-center justify-between px-2 py-1.5 rounded text-xs cursor-pointer transition-colors ${
-                  name === activeProfile
-                    ? "bg-[#0d2a25] border border-[#00ccaa]/40 text-[#00ccaa]"
-                    : "border border-transparent text-[#555] hover:text-[#888] hover:bg-[#1a1a1a]"
-                }`}
-                onClick={() => handleActivateProfile(name)}
-              >
-                <span className="truncate">{name}</span>
-                {name !== "default" && (
-                  <button
-                    onClick={(e) => { e.stopPropagation(); handleDeleteProfile(name); }}
-                    className="ml-1 text-[#333] hover:text-[#888] transition-colors flex-shrink-0"
-                    title={`Delete "${name}"`}
-                  >
-                    <Trash2 size={11} />
-                  </button>
-                )}
-              </div>
-            ))}
+        {/* Profile selector — operator-only */}
+        {admin && (
+          <div>
+            <div className="text-[10px] uppercase tracking-widest text-[#555] mb-2">Profile</div>
+            <div className="flex flex-col gap-1">
+              {Object.keys(profiles).map((name) => (
+                <div
+                  key={name}
+                  className={`flex items-center justify-between px-2 py-1.5 rounded text-xs cursor-pointer transition-colors ${
+                    name === activeProfile
+                      ? "bg-[#0d2a25] border border-[#00ccaa]/40 text-[#00ccaa]"
+                      : "border border-transparent text-[#555] hover:text-[#888] hover:bg-[#1a1a1a]"
+                  }`}
+                  onClick={() => handleActivateProfile(name)}
+                >
+                  <span className="truncate">{name}</span>
+                  {name !== "default" && (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); handleDeleteProfile(name); }}
+                      className="ml-1 text-[#333] hover:text-[#888] transition-colors flex-shrink-0"
+                      title={`Delete "${name}"`}
+                    >
+                      <Trash2 size={11} />
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
           </div>
-        </div>
+        )}
 
         {threshold !== null && (
           <div className="text-[10px] text-[#777] mt-auto font-mono">
@@ -449,8 +460,9 @@ export function ChatView() {
             </div>
           </div>
 
-          {/* KB Status Block — CLI terminal receipt */}
-          {kbStatus !== "idle" && (
+          {/* KB Status Block — CLI terminal receipt (operator-only; the kiosk
+              starts pre-loaded with no ingest action, so the receipt is noise) */}
+          {admin && kbStatus !== "idle" && (
             <div className="flex justify-center">
               <div
                 className="w-full max-w-md font-mono text-[11px] border border-[#1a3030] rounded px-4 py-3 space-y-1"

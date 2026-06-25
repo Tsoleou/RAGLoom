@@ -79,6 +79,24 @@ def _get_session(session_id: str) -> _ChatSession:
         return sess
 
 
+def init_chat_pipe_if_needed() -> int:
+    """服務模式啟動時初始化 chat_pipe，讓 chat-only kiosk 不必手動按 Load KB。
+
+    既有 collection 非空 → 直接接上、不重索引（重啟很快、不需 Ollama）；
+    collection 空（首次在乾淨 volume 起）→ 跑一次 ingest 建立向量庫。
+    只由 lifespan 在 RAG_SERVE_MODE 開啟時呼叫；dev / offline pytest 不觸發，
+    因此不會在沒有 Ollama 的環境連線。回傳目前 collection 的 chunk 數。
+    """
+    global chat_pipe
+    if chat_pipe is not None:
+        return chat_pipe.collection.count()
+    pipe = RAGPipeline(Settings(score_threshold=0.0))
+    if pipe.collection.count() == 0:
+        pipe.ingest("./knowledge_base")
+    chat_pipe = pipe
+    return chat_pipe.collection.count()
+
+
 @router.post("/api/chat/ingest")
 def chat_ingest():
     """Initialize the chat RAG pipeline and ingest the knowledge base.
