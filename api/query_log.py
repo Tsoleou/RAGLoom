@@ -371,3 +371,37 @@ def fetch_recent(limit: int = 50, offset: int = 0) -> list[dict]:
         return out
     finally:
         conn.close()
+
+
+# Columns exported by the CSV download — the human-useful query-history fields,
+# in a stable order. The raw `detail` JSON blob is intentionally excluded.
+EXPORT_COLUMNS = [
+    "id", "ts", "query", "profile", "model", "intent", "product",
+    "status", "blocked", "blocked_reason", "gate",
+    "top_score", "n_retrieved", "n_passed", "top_source",
+    "rerank_kept", "rerank_total", "critic_verdict", "latency_ms",
+]
+
+
+def fetch_all(days: int = 0) -> list[dict]:
+    """Every query row in the last `days` days (0 = all time), oldest first.
+
+    Unlike `fetch_recent` there is no LIMIT — this backs the full CSV export, so
+    it returns the complete history for the selected range with the product_id
+    resolved to its readable name.
+    """
+    where, params = _since_clause(days)
+    cols = ", ".join(EXPORT_COLUMNS)
+    conn = _connect()
+    try:
+        rows = conn.execute(
+            f"SELECT {cols} FROM queries{where} ORDER BY id ASC", params
+        ).fetchall()
+        out = []
+        for r in rows:
+            d = dict(r)
+            d["product"] = display_name(d.get("product")) or (d.get("product") or "")
+            out.append(d)
+        return out
+    finally:
+        conn.close()

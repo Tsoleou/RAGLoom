@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { RefreshCw, AlertTriangle, ShieldOff, Clock, MessageSquare } from "lucide-react";
+import { RefreshCw, AlertTriangle, ShieldOff, Clock, MessageSquare, Download } from "lucide-react";
 
 // ── Types (mirror api/routers/dashboard.py responses) ──────────────
 type Bucket = { key: string; count: number };
@@ -120,6 +120,7 @@ export function Dashboard() {
   const [stats, setStats] = useState<Stats | null>(null);
   const [rows, setRows] = useState<QueryRow[]>([]);
   const [loading, setLoading] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -141,6 +142,28 @@ export function Dashboard() {
 
   useEffect(() => { load(); }, [load]);
 
+  // Download the full query history for the selected range as CSV. The backend
+  // streams every row in the window (not just the 100 shown in the table).
+  const exportCsv = useCallback(async () => {
+    setExporting(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/dashboard/export.csv?days=${days}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `query_history_${days === 0 ? "all" : `${days}d`}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      setError(`匯出失敗: ${e}`);
+    } finally {
+      setExporting(false);
+    }
+  }, [days]);
+
   return (
     <div className="h-full overflow-y-auto bg-[#1a1a1a] text-[#e0e0e0] p-6">
       <div className="flex items-center justify-between mb-5">
@@ -154,6 +177,11 @@ export function Dashboard() {
               </button>
             ))}
           </div>
+          <button onClick={exportCsv} disabled={loading || exporting || !stats || stats.total === 0}
+            title="Export the full query history for this range as CSV"
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded border border-[#333] text-[#888] hover:text-[#00ccaa] hover:bg-[#2a2a2a] transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
+            <Download size={13} className={exporting ? "animate-pulse" : ""} /> Export CSV
+          </button>
           <button onClick={load} disabled={loading}
             className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded border border-[#333] text-[#888] hover:text-[#e0e0e0] hover:bg-[#2a2a2a] transition-colors disabled:opacity-50">
             <RefreshCw size={13} className={loading ? "animate-spin" : ""} /> Refresh
