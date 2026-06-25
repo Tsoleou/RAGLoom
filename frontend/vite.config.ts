@@ -1,6 +1,10 @@
+import { fileURLToPath } from 'node:url'
 import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
+
+// ESM 沒有 __dirname；從 import.meta.url 還原專案目錄給 rollup input 用。
+const root = fileURLToPath(new URL('.', import.meta.url))
 
 // VITE_API_TOKEN 由 backend lifespan 自動寫到專案根目錄的 .env.local
 // （也可以手動在 frontend/.env.local 設定）。Proxy 把它注入到每個 /api
@@ -16,6 +20,16 @@ export default defineConfig(({ mode }) => {
 
   return {
     plugins: [react(), tailwindcss()],
+    // 多頁輸出：index.html = 完整操作者 app，chat.html = 純對話 kiosk。
+    // 兩頁共用 hash 過的 bundle，FastAPI 之後從 /assets 服務。
+    build: {
+      rollupOptions: {
+        input: {
+          main: `${root}index.html`,
+          chat: `${root}chat.html`,
+        },
+      },
+    },
     server: {
       proxy: {
         '/api': {

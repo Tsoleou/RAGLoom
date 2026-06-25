@@ -17,6 +17,7 @@ read that same attribute. Never re-create it elsewhere — import this object.
 
 import secrets
 from pathlib import Path
+from urllib.parse import urlparse
 
 from fastapi import Request, status
 from fastapi.responses import JSONResponse
@@ -47,6 +48,25 @@ def _ensure_api_token(settings: Settings) -> str:
     return token
 
 
+def is_same_origin(headers) -> bool:
+    """同源請求放行的判斷。`headers` 是 request 或 websocket 的 .headers（皆有 .get）。
+
+    服務模式（FastAPI 自己以靜態檔服務前端）時，瀏覽器同源呼叫 /api/* 不會經過
+    dev 的 vite proxy，也就不會被注入 X-Local-Token —— 若仍硬性要求 token，整個
+    kiosk 都會 401。所以同源請求放行：Origin 的 netloc 等於 Host，或根本沒有
+    Origin header（top-level 導覽 / 多數 GET）即視為同源。
+
+    Trade-off：同機、同 origin 的本地程序（含無 Origin 的 curl）可打 API。單機
+    展場可接受；訪客與 admin 的隔離靠瀏覽器 kiosk 鎖定 URL，非 app 層認證。
+    跨 origin 的瀏覽器請求仍需 token —— dev 的 vite proxy 走 changeOrigin，backend
+    看到 Origin=:5173 / Host=:8000 不相符，因此 dev 行為不變、照舊走 token。
+    """
+    origin = headers.get("origin")
+    if not origin:
+        return True
+    return urlparse(origin).netloc == headers.get("host", "")
+
+
 class LocalTokenMiddleware(BaseHTTPMiddleware):
     """驗證 X-Local-Token header。CORS preflight (OPTIONS) 放行。
     若 token 尚未 ready（lifespan 未跑，例如某些 test client）視為 dev-bypass。"""
@@ -59,6 +79,10 @@ class LocalTokenMiddleware(BaseHTTPMiddleware):
 
         expected = _settings.api_local_token
         if not expected:
+            return await call_next(request)
+
+        # 服務模式同源放行（瀏覽器不經 vite proxy、不帶 token）。
+        if is_same_origin(request.headers):
             return await call_next(request)
 
         provided = request.headers.get(_TOKEN_HEADER, "")

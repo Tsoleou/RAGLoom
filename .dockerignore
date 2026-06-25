@@ -1,0 +1,18 @@
+# 縮小 build context：這些不該進映像（重建或執行期才產生）。
+venv/
+**/node_modules/
+frontend/dist/
+chroma_db/
+eval_results/
+.git/
+.github/
+.claude/
+.vscode/
+__pycache__/
+**/__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.env
+.env.local
+.DS_Store
