@@ -10,6 +10,8 @@ interface Props {
   onSaveProfile: (name: string) => Promise<void>;
   profiles: Record<string, unknown>;
   onLoadProfile: (name: string) => void;
+  activeProfile: string;
+  onActivateProfile: (name: string) => Promise<void>;
   canRunBatch: boolean;
   onRunBatch: () => void;
 }
@@ -24,6 +26,8 @@ export function ExecutionBar({
   onSaveProfile,
   profiles,
   onLoadProfile,
+  activeProfile,
+  onActivateProfile,
   canRunBatch,
   onRunBatch,
 }: Props) {
@@ -32,7 +36,16 @@ export function ExecutionBar({
   const [showInput, setShowInput] = useState(false);
   const [saved, setSaved] = useState(false);
   const [showLoadMenu, setShowLoadMenu] = useState(false);
+  const [showActivateMenu, setShowActivateMenu] = useState(false);
+  const [activating, setActivating] = useState(false);
   const loadMenuRef = useRef<HTMLDivElement>(null);
+
+  async function handleActivate(name: string) {
+    setActivating(true);
+    await onActivateProfile(name);
+    setActivating(false);
+    setShowActivateMenu(false);
+  }
 
   async function handleSave() {
     const name = profileName.trim();
@@ -106,6 +119,36 @@ export function ExecutionBar({
                   className="w-full text-left px-3 py-1.5 text-xs text-[#888] hover:bg-[#00ccaa]/10 hover:text-[#00ccaa] transition-colors"
                 >
                   {name}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Set Live — activate which profile the customer-facing chat presents */}
+        <div className="relative border-l border-[#2a2a2a] pl-3">
+          <button
+            onClick={() => setShowActivateMenu((v) => !v)}
+            disabled={isRunning || activating || Object.keys(profiles).length === 0}
+            title="Choose which profile the customer chat (/) presents"
+            className="px-3 py-1.5 text-xs font-medium rounded-md border border-[#e07830]/40 text-[#e07830] hover:bg-[#e07830]/10 hover:border-[#e07830] disabled:opacity-40 transition-colors"
+          >
+            {activating ? "..." : `Live: ${activeProfile} ▾`}
+          </button>
+          {showActivateMenu && (
+            <div className="absolute top-full mt-1 left-0 z-50 bg-[#1a1a1a] border border-[#2a2a2a] rounded-md shadow-lg min-w-[160px] py-1">
+              {Object.keys(profiles).map((name) => (
+                <button
+                  key={name}
+                  onClick={() => handleActivate(name)}
+                  className={`w-full text-left px-3 py-1.5 text-xs flex items-center justify-between transition-colors ${
+                    name === activeProfile
+                      ? "text-[#00ccaa]"
+                      : "text-[#888] hover:bg-[#e07830]/10 hover:text-[#e07830]"
+                  }`}
+                >
+                  <span className="truncate">{name}</span>
+                  {name === activeProfile && <span className="ml-2 flex-shrink-0">✓</span>}
                 </button>
               ))}
             </div>

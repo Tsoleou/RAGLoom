@@ -469,14 +469,28 @@ export function FlowEditor() {
   // Profile state: each profile carries the full {nodes, edges} so chat and
   // editor see the same setup. Same shape as /api/default-graph.
   const [savedProfiles, setSavedProfiles] = useState<Record<string, { graph?: SerializedGraph }>>({});
+  const [activeProfile, setActiveProfile] = useState<string>("default");
   const [batchEvalOpen, setBatchEvalOpen] = useState(false);
 
   useEffect(() => {
     fetch("/api/profiles")
       .then((r) => r.json())
-      .then((data) => setSavedProfiles(data.profiles ?? {}))
+      .then((data) => {
+        setSavedProfiles(data.profiles ?? {});
+        if (data.active) setActiveProfile(data.active);
+      })
       .catch(() => {});
   }, []);
+
+  const handleActivateProfile = useCallback(async (name: string) => {
+    await fetch("/api/profiles/activate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name }),
+    });
+    setActiveProfile(name);
+    toast(`Profile "${name}" 已設為客人對話使用`, "success");
+  }, [toast]);
 
   const handleSaveProfile = useCallback(async (name: string) => {
     const graph: SerializedGraph = {
@@ -618,6 +632,8 @@ export function FlowEditor() {
           onSaveProfile={handleSaveProfile}
           profiles={savedProfiles}
           onLoadProfile={handleLoadProfile}
+          activeProfile={activeProfile}
+          onActivateProfile={handleActivateProfile}
           canRunBatch={hasEvalCaseLoader}
           onRunBatch={() => setBatchEvalOpen(true)}
         />
