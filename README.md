@@ -245,6 +245,33 @@ Point a kiosk/full-screen browser at the visitor URL so visitors can't reach `/a
 chrome --kiosk --app=http://localhost:8000/
 ```
 
+### Booth security checklist (three layers)
+
+At-rest encryption protects the *files*; it can't stop a visitor reaching them, nor protect a stolen powered-off machine. Those need the OS. The three layers are complementary — for a confidential-KB booth, do all three:
+
+- [ ] **Layer 1 — RAGLoom at-rest encryption (app).** Run `make kb-encrypt` so source files, vector chunk text, and the query log are ciphertext on disk. Decryption happens only in server memory — the files stay encrypted even while the booth is running and answering, so a visitor who opens or copies them gets gibberish. (Filenames and `product_images/` remain readable; embeddings remain plaintext and are partially invertible — see [Encryption at rest](#encryption-at-rest-optional).)
+- [ ] **Layer 2 — OS kiosk lockdown (Windows).** RAGLoom only locks the *browser* to `/`; it cannot block `Win+E`, `Alt+Tab`, `Win+D`, etc. Configure Windows **Assigned Access / kiosk mode** so the account boots straight into one full-screen browser with no route back to the desktop, disable those shortcut keys, and disable/seal the USB ports. This is what actually stops a visitor opening File Explorer.
+- [ ] **Layer 3 — Full-disk encryption (OS).** Enable **BitLocker** (Windows) or **FileVault** (macOS) so a machine carried off and powered down stays encrypted at the disk level — closing the gap app-level encryption can't (a copy of `chroma_db` still exposes the plaintext embeddings).
+
+**Operator daily routine**
+
+1. Power on / `make up-gpu`. The KB boots **locked** (chat returns a "locked" notice).
+2. Open `/admin` — from the booth machine **or your phone on the same network** — and enter the passphrase once. Chat goes live.
+3. If the machine reboots mid-show, repeat step 2 (~1 minute; the booth is staffed, so brief downtime is acceptable). Outside show hours it simply stays locked.
+
+**Passphrase rules (critical)**
+
+- **Never store the passphrase on this machine** — not in `.env`, not in any file. A copied folder/disk would then carry the secret too and the encryption is void. Keep it in the operator's head or a password manager **on another device**.
+- If you set `RAG_ADMIN_PASSWORD` (the admin-page gate), use a value **different** from the KB passphrase — `.env` lives on disk.
+- **Lose the passphrase and the data is unrecoverable** (no backdoor, by design). Record it in a password manager.
+
+| Threat | Defended by |
+| --- | --- |
+| Visitor copies `knowledge_base/` to USB | Layer 1 (ciphertext) |
+| Visitor opens File Explorer on the booth machine | Layer 2 (can't reach it) + Layer 1 (ciphertext if they do) |
+| Machine carried off and powered down | Layer 3 (full-disk) |
+| Copy of `chroma_db` (embedding inversion) | Layer 3 (full-disk); Layer 1 covered the text, not vectors |
+
 ### Day-to-day operation
 
 | Command | Action |
