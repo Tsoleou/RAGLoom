@@ -217,7 +217,14 @@ docker run --rm -p 8000:8000 \
   $(docker build -q -t ragloom-api .)
 ```
 
-(Or skip Docker entirely and run the two-process dev workflow above — it uses the native Ollama too.) macOS is best treated as a dev/demo machine, not the GPU booth.
+**Simplest on macOS** — skip Docker entirely and serve everything from one local process against the native Ollama (single origin, no Vite, reuses the existing `chroma_db`):
+
+```bash
+make build-frontend  # one-time: builds frontend/dist (gitignored — absent on a fresh checkout)
+make serve-local     # RAG_SERVE_MODE=1 uvicorn on :8000 → open http://localhost:8000/
+```
+
+`serve-local` only serves the UI when `frontend/dist` exists; without it (no prior build) it runs **API-only** and `/` 404s — use the two-process dev workflow for the UI instead, or run `make build-frontend` first. (Both paths use the native Ollama.) macOS is best treated as a dev/demo machine, not the GPU booth — don't `make up` here (container Ollama is CPU-only and the generator exceeds Ollama's timeout, so answers never return).
 
 ### Operator password (recommended for booths)
 

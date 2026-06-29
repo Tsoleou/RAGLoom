@@ -38,6 +38,25 @@ _DIST = Path("frontend/dist")
 
 # ── Lifespan ───────────────────────────────────────────────────────
 
+def _print_ready_banner():
+    """啟動就緒時印一段醒目、可點的 URL，讓 `docker compose up` 的操作者一眼
+    知道服務起來了、該從哪個網址進。base 預設 localhost:8000，展場換機可用
+    RAG_PUBLIC_URL env 覆蓋（不必改 code）。_DIST 存在＝本進程有 serve 前端，
+    才指向 :8000 的 UI；純 dev（無 dist、前端走 vite）則指向 :5173。"""
+    base = os.environ.get("RAG_PUBLIC_URL", "http://localhost:8000").rstrip("/")
+    bar = "=" * 60
+    print(bar)
+    if _DIST.is_dir():
+        print("  ✓ RAGLoom 已就緒，可開啟瀏覽器：")
+        print(f"      訪客對話 (kiosk)   →  {base}/")
+        print(f"      操作者後台 (admin) →  {base}/admin")
+    else:
+        print("  ✓ RAGLoom API 已就緒（前端請另開 vite dev）：")
+        print(f"      API                →  {base}/")
+        print("      前端 (vite dev)    →  http://localhost:5173/")
+    print(bar)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     _ensure_api_token(_settings)
@@ -51,6 +70,7 @@ async def lifespan(app: FastAPI):
             # 別讓初始化失敗擋掉整個 server；admin 仍可手動 Load KB 重試。
             print(f"[Server] WARNING: auto-init chat_pipe failed: {e}")
     print("[Server] RAGLoom API started")
+    _print_ready_banner()
     yield
     print("[Server] RAGLoom API stopped")
 

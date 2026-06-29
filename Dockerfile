@@ -31,5 +31,7 @@ COPY knowledge_base/ ./knowledge_base/
 COPY --from=frontend /app/frontend/dist ./frontend/dist
 
 ENV RAG_SERVE_MODE=1
+# 不 buffer stdout：啟動就緒 banner 與 [Server] log 才能即時出現在 docker compose up。
+ENV PYTHONUNBUFFERED=1
 EXPOSE 8000
 CMD ["uvicorn", "api.server:app", "--host", "0.0.0.0", "--port", "8000"]
