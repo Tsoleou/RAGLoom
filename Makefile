@@ -1,6 +1,6 @@
 # RAGLoom — 展場 kiosk 部署 + 開發指令。
 
-.PHONY: build up down logs pull-model dev serve-local build-frontend
+.PHONY: build up down logs pull-model dev serve-local build-frontend kb-encrypt
 
 # ── 展場部署（容器，單一指令）──────────────────────────────────────
 build:           ## 建映像（含 build 前端）
@@ -31,6 +31,11 @@ build-frontend:  ## 本機 build 前端到 frontend/dist（serve-local 要 serve
 serve-local:     ## Mac/快速：本機 serve-mode 單一 origin localhost:8000，接 host Ollama、用現有 chroma_db（不經 Docker、免 vite）
 	@test -d frontend/dist || echo "⚠️  frontend/dist 不存在 → 只會 serve API（/ 會 404）。先 make build-frontend 才有 UI。"
 	RAG_SERVE_MODE=1 venv/bin/uvicorn api.server:app --host 0.0.0.0 --port 8000
+
+# ── 知識庫加密（一次性 migration）──────────────────────────────────
+kb-encrypt:      ## 把明文知識庫加密：建 keystore + 加密來源檔 + 重建加密向量庫（接 host Ollama）
+	@echo "⚠️  這會加密 knowledge_base/ 並重建 chroma_db。密碼不會存檔，遺失即無法復原。"
+	venv/bin/python -m tools.encrypt_kb
 
 dev:             ## 印出 dev 啟動指令（兩 process 熱重載：uvicorn + vite）
 	@echo "開發模式（兩個終端機）："
