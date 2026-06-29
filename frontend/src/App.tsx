@@ -4,12 +4,14 @@ import { HelpCircle, X } from "lucide-react";
 import { FlowEditor } from "./components/FlowEditor";
 import { ChatView } from "./components/ChatView";
 import { Dashboard } from "./components/Dashboard";
+import { KnowledgeBasePanel } from "./components/KnowledgeBasePanel";
+import { UnlockGate } from "./components/UnlockGate";
 import { Avatar } from "./components/avatar/Avatar";
 import { ToastProvider } from "./components/ui/Toast";
 import { ConfirmProvider } from "./components/ui/ConfirmDialog";
 import { useFocusTrap } from "./hooks/useFocusTrap";
 
-type View = "editor" | "chat" | "dashboard";
+type View = "editor" | "chat" | "knowledge" | "dashboard";
 
 // TEMP preview harness — reach via ?preview=avatar, no backend needed. Remove when done.
 export function AvatarPreview() {
@@ -41,7 +43,9 @@ function App() {
       ? "Drag nodes to build pipeline / click Run to execute"
       : view === "chat"
         ? "Chat with the RAG pipeline"
-        : "Analyze user query behavior";
+        : view === "knowledge"
+          ? "Encrypt-at-rest knowledge base — inject or remove documents"
+          : "Analyze user query behavior";
 
   return (
     <MotionConfig reducedMotion="user">
@@ -75,6 +79,13 @@ function App() {
                     Chat
                   </button>
                   <button
+                    onClick={() => setView("knowledge")}
+                    aria-current={view === "knowledge"}
+                    className={`px-3 py-1.5 transition-colors ${view === "knowledge" ? "bg-[#e07830] text-white" : "bg-[#252525] text-[#888] hover:bg-[#2a2a2a]"}`}
+                  >
+                    Knowledge
+                  </button>
+                  <button
                     onClick={() => setView("dashboard")}
                     aria-current={view === "dashboard"}
                     className={`px-3 py-1.5 transition-colors ${view === "dashboard" ? "bg-[#e07830] text-white" : "bg-[#252525] text-[#888] hover:bg-[#2a2a2a]"}`}
@@ -94,9 +105,19 @@ function App() {
               </div>
             </header>
 
-            {/* Main content */}
+            {/* Main content — gated behind KB unlock when encryption is on */}
             <main className="flex-1 overflow-hidden">
-              {view === "editor" ? <FlowEditor /> : view === "chat" ? <ChatView /> : <Dashboard />}
+              <UnlockGate>
+                {view === "editor" ? (
+                  <FlowEditor />
+                ) : view === "chat" ? (
+                  <ChatView />
+                ) : view === "knowledge" ? (
+                  <KnowledgeBasePanel />
+                ) : (
+                  <Dashboard />
+                )}
+              </UnlockGate>
             </main>
 
             <HelpModal open={helpOpen} onClose={() => setHelpOpen(false)} />
@@ -110,6 +131,7 @@ function App() {
 const VIEW_GUIDE: { name: string; desc: string }[] = [
   { name: "Editor", desc: "拖曳節點建構 RAG pipeline,按 Run 執行" },
   { name: "Chat", desc: "用目前的 pipeline 與知識庫對話" },
+  { name: "Knowledge", desc: "管理加密知識庫:注入或移除文件" },
   { name: "Dashboard", desc: "分析使用者查詢行為與知識缺口" },
 ];
 
