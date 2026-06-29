@@ -45,6 +45,12 @@ export default defineConfig(({ mode }) => {
             })
           },
         },
+        // 產品圖由 backend serve（住 knowledge_base/product_images）。非 /api、
+        // 不過 LocalTokenMiddleware，純公開靜態，故不需帶 token。
+        '/product_images': {
+          target: 'http://localhost:8000',
+          changeOrigin: true,
+        },
       },
     },
   }

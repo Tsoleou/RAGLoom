@@ -78,6 +78,19 @@ app.include_router(profiles.router)
 app.include_router(eval.router)
 app.include_router(dashboard.router)
 
+# ── Product images ─────────────────────────────────────────────────
+# 產品圖與產品文字資料同住 knowledge_base（source-of-truth 一處），但只掛
+# 這個專屬子目錄、不掛 knowledge_base 根 —— 根目錄混有 internal_specs.txt
+# 等內部文件，整個掛出去會公開外洩。獨立於 _DIST，backend-only 部署也能 serve。
+# /api/* 由 router 先比對，此處只佔 /product_images 前綴，不衝突。
+_PRODUCT_IMAGES = Path("knowledge_base/product_images")
+if _PRODUCT_IMAGES.is_dir():
+    app.mount(
+        "/product_images",
+        StaticFiles(directory=_PRODUCT_IMAGES),
+        name="product_images",
+    )
+
 # ── Static frontend ────────────────────────────────────────────────
 # 服務模式：FastAPI 同時供應 built 前端與 API（單一 origin、免 CORS）。
 #   /        → chat.html  訪客面（純對話 kiosk）
