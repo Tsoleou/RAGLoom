@@ -42,10 +42,15 @@ services:
       # 操作者面密碼（Basic Auth）。在 .env 或 shell 設 RAG_ADMIN_PASSWORD；
       # 留空 = 不擋 /admin（只靠 kiosk 鎖定）。訪客 chat 端點永遠免密碼。
       - RAG_ADMIN_PASSWORD=${RAG_ADMIN_PASSWORD:-}
+      # KB 加密 keystore 放進持久化的 /app/data（重啟不丟 salt；salt 丟了＝加密資料無法復原）。
+      # 啟用加密時，host 端 migration 要用同一條路徑：
+      #   RAG_KB_KEYSTORE=./data/kb_keystore.json make kb-encrypt
+      - RAG_KB_KEYSTORE=/app/data/kb_keystore.json
     volumes:
       - ./chroma_db:/app/chroma_db          # 向量庫持久化（空 → 首次自動建）
       - ./knowledge_base:/app/knowledge_base # 客戶丟文件進來、到 /admin 按 Load KB 重索引
       - ./config/profiles:/app/config/profiles # profile / pipeline 持久化
+      - ./data:/app/data                     # 問答紀錄 queries.db + KB 加密 keystore 持久化
     ports:
       - "8000:8000"
 

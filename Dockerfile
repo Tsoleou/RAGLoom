@@ -24,6 +24,7 @@ COPY api/ ./api/
 COPY core/ ./core/
 COPY config/ ./config/
 COPY eval/ ./eval/
+COPY tools/ ./tools/
 RUN pip install --no-cache-dir ".[pdf]"   # 含 PDF ingest，方便客戶擴充 KB
 
 # 預設知識庫（客戶可用掛載的 volume 覆蓋 / 擴充），與 built 前端。

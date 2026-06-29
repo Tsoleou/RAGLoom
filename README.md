@@ -269,6 +269,37 @@ Files matching `product_*.{ext}` are automatically tagged with a `product_id` me
 
 Place always-on reference files (e.g. a product comparison CSV) in `knowledge_base/_reference/`. These are loaded at startup and injected directly into every prompt — they are not indexed in the vector store.
 
+### Injecting documents from the editor
+
+The operator surface has a **Knowledge** tab (`/admin`) for managing the knowledge base without touching the filesystem:
+
+- **Upload a file** (`.txt` / `.md` / `.csv` / `.pdf`) or **paste text** with a filename.
+- Each document is written through the encryption layer (when enabled) and **re-ingested into the live collection immediately** — it's answerable in chat right away, no Load KB step.
+- **Delete** removes both the source file and its chunks from the vector store.
+
+Backed by `GET/POST/PUT/DELETE /api/kb/documents`. Injection only writes inside `knowledge_base/`; filenames are validated (no path escape, known extensions only). Keep the `product_<id>.<ext>` naming to get metadata-filtered retrieval for that product.
+
+### Encryption at rest (optional)
+
+The knowledge base can be encrypted on disk — source files, the vector store's chunk text, **and** the query log (including existing rows, migrated in place). Only document *bodies* are encrypted; retrieval metadata (`product_id`, `type`, `filename`) and the spec table stay queryable.
+
+**What this protects, and what it doesn't.** Source files, chunk text, and the query log become ciphertext, so a copied folder / Docker volume / disk image no longer exposes the documents or visitor questions as readable text. **The vector embeddings remain in plaintext** — retrieval needs them, so they can't be encrypted — and embeddings of short, templated chunks are partially invertible (embedding-inversion attacks can recover approximate content). Treat this as defense-in-depth against casual copying and string-grep exfiltration, **not** as a substitute for OS-level full-disk encryption underneath. For true at-rest protection of the whole machine, run this on top of FileVault / LUKS / BitLocker.
+
+**Enable it** (one-time migration, with Ollama running):
+
+```bash
+make kb-encrypt          # or: venv/bin/python -m tools.encrypt_kb
+```
+
+This prompts for a passphrase, creates a keystore (salt + verifier only — **no passphrase or key is stored**), encrypts every source file, rebuilds the vector store as ciphertext, and securely wipes the old plaintext store.
+
+**Key model (hybrid unlock).** The passphrase is entered at runtime, never persisted; the derived key lives in memory only. After each server start the KB is **locked** — chat returns a "locked" notice and the unattended kiosk auto-init waits. The operator opens `/admin`, enters the passphrase once (unlock screen) → `POST /api/kb/unlock` derives the key and brings chat online. This defends against full-disk theft, at the cost of one unlock per boot. Set `RAG_ADMIN_PASSWORD` to the **same** passphrase so one secret covers both admin login and KB unlock.
+
+- Lose the passphrase → the KB is unrecoverable (by design).
+- Public product images (`knowledge_base/product_images/`, served at `/product_images`) stay plaintext.
+- Without a keystore, encryption is **off** and behavior is byte-for-byte unchanged. See `.env.example` (`RAG_KB_KEYSTORE`, `RAG_KB_PASSPHRASE`) for details.
+- In Docker the keystore lives in the persisted `./data` volume (`RAG_KB_KEYSTORE=/app/data/kb_keystore.json`, already set in `docker-compose.yml`). ⚠️ If the keystore is lost the salt is gone and **the encrypted data is unrecoverable** — so run the migration against that same path: `RAG_KB_KEYSTORE=./data/kb_keystore.json make kb-encrypt`. `knowledge_base/`, `chroma_db/`, and `data/` are all mounted so encrypted state survives restarts.
+
 ## Eval Harness
 
 A small golden-set regression suite lives in `eval/`. Each case in `eval/golden_set.json` declares a question, expected language, optional expected `product_id`, expected facts (keyword recall), and optional `expected_blocked` for guardrail behaviour.
