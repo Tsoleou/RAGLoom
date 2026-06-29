@@ -21,6 +21,9 @@ dependencies = [
     "pydantic",
     "chromadb",
     "requests",
+    # At-rest KB encryption (Fernet + scrypt). Imported by core/kb_crypto, which
+    # core/loader pulls in unconditionally, so this is a hard runtime dependency.
+    "cryptography",
 ]
 
 [project.optional-dependencies]

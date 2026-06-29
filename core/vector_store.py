@@ -7,6 +7,7 @@
 import chromadb
 from typing import List, Optional
 
+from core import kb_crypto
 from core.chunker import Chunk
 # Re-export so existing `from core.vector_store import RetrievalResult` keeps
 # working; the definition now lives in the chromadb-free retrieval_types module.
@@ -79,7 +80,11 @@ def add_chunks(
     # 準備寫入資料
     ids = [f"{chunk.metadata.get('filename', 'doc')}_{chunk.metadata.get('chunk_index', i)}"
            for i, chunk in enumerate(chunks)]
-    documents = [chunk.text for chunk in chunks]
+    # Encrypt the chunk full text before it's persisted — this is the field that
+    # would otherwise leave the whole KB readable in chroma's SQLite. Metadata
+    # stays plaintext so retrieval `where` filters keep working. Pass-through
+    # when encryption is disabled.
+    documents = [kb_crypto.encrypt_text(chunk.text) for chunk in chunks]
     metadatas = [chunk.metadata for chunk in chunks]
 
     if upsert:
@@ -137,7 +142,9 @@ def query(
         # cosine distance → similarity score: score = 1 - distance
         score = 1.0 - distance
 
-        chunk = Chunk(text=doc_text, metadata=metadata)
+        # Decrypt the stored chunk text back to plaintext for the rest of the
+        # pipeline (keyword boost, prompt building). No-op for plaintext values.
+        chunk = Chunk(text=kb_crypto.decrypt_text(doc_text), metadata=metadata)
         retrieval_results.append(RetrievalResult(
             chunk=chunk,
             score=score,

@@ -8,6 +8,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import List
 
+from core import kb_crypto
+
 
 @dataclass
 class Document:
@@ -164,16 +166,24 @@ def load_directory(dir_path: str) -> List[Document]:
 
 # --- 內部讀取函式 ---
 
+def _read_bytes(path: Path) -> bytes:
+    """Read a source file, transparently decrypting at-rest KB encryption.
+
+    When encryption is disabled (no keystore) this returns the raw plaintext
+    bytes unchanged; when enabled+unlocked it decrypts; when enabled+locked it
+    raises KBLocked — which correctly stops ingest/chat from running blind.
+    """
+    return kb_crypto.decrypt_bytes(path.read_bytes())
+
+
 def _load_text(path: Path) -> str:
     """讀取純文字檔（.txt, .md）。"""
-    with open(path, "r", encoding="utf-8") as f:
-        return f.read()
+    return _read_bytes(path).decode("utf-8")
 
 
 def _load_csv(path: Path) -> str:
     """讀取 CSV，保留原始格式。格式轉換交給 chunker 處理。"""
-    with open(path, "r", encoding="utf-8") as f:
-        return f.read()
+    return _read_bytes(path).decode("utf-8")
 
 
 def _load_pdf(path: Path) -> str:
@@ -183,7 +193,9 @@ def _load_pdf(path: Path) -> str:
     except ImportError:
         raise ImportError("讀取 PDF 需要 pymupdf，請執行：pip install pymupdf")
 
-    doc = fitz.open(str(path))
+    # Open from an in-memory stream so an encrypted PDF is decrypted to bytes
+    # and never touches disk in plaintext. Plaintext PDFs pass through unchanged.
+    doc = fitz.open(stream=_read_bytes(path), filetype="pdf")
     pages = []
     for page in doc:
         text = page.get_text()
