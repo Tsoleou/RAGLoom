@@ -57,6 +57,17 @@ class ActivateProfileRequest(BaseModel):
     name: str
 
 
+class UnlockRequest(BaseModel):
+    # Operator unlock passphrase. Capped to a sane length; never persisted.
+    passphrase: str = Field(..., min_length=1, max_length=256)
+
+
+class KBDocumentRequest(BaseModel):
+    # Inject a document by pasted text (alternative to multipart upload).
+    filename: str = Field(..., min_length=1, max_length=128)
+    content: str = Field(..., min_length=1, max_length=2_000_000)
+
+
 class BatchEvalScope(BaseModel):
     mode: str  # "all" | "category" | "ids"
     category: str | None = None

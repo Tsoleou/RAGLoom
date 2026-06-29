@@ -25,6 +25,7 @@ from fastapi.responses import JSONResponse, Response
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from config.settings import Settings
+from core import kb_crypto
 
 _LOCAL_ENV_PATH = Path(".env.local")
 _TOKEN_HEADER = "X-Local-Token"
@@ -36,6 +37,12 @@ _KIOSK_API: set[tuple[str, str]] = {
     ("POST", "/api/chat/query"),
     ("POST", "/api/chat/reset"),
     ("GET", "/api/profiles"),
+    # KB lock bootstrap: status lets the kiosk show a "locked" banner; unlock
+    # validates its own passphrase against the keystore verifier, so it must be
+    # reachable before any admin credential exists (the operator may rely on the
+    # unlock passphrase alone, with no RAG_ADMIN_PASSWORD set).
+    ("GET", "/api/kb/status"),
+    ("POST", "/api/kb/unlock"),
 }
 
 
@@ -61,6 +68,11 @@ def check_admin_auth(headers) -> bool:
             decoded = base64.b64decode(auth[6:]).decode("utf-8", "replace")
             _, _, pw = decoded.partition(":")
             if secrets.compare_digest(pw, admin_pw):
+                return True
+            # Unify login + unlock: after the operator has unlocked the KB, the
+            # same passphrase satisfies admin Basic Auth, so one secret covers
+            # both the encryption key and the /admin gate.
+            if kb_crypto.verify_passphrase(pw):
                 return True
         except (ValueError, TypeError):
             pass
