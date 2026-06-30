@@ -106,3 +106,32 @@ def test_encryption_gates_admin_surface_without_admin_password(crypto, monkeypat
         assert client.post("/api/kb/lock", headers={"Authorization": f"Basic {bad}"}).status_code == 401
     finally:
         auth._settings.api_admin_password, auth._settings.api_local_token = saved
+
+
+def test_unlock_endpoint_rate_limits_brute_force(crypto):
+    """S2: repeated wrong passphrases lock the unlock endpoint out (429) before
+    running scrypt, and a correct passphrase is blocked while locked out."""
+    crypto.init_keystore("operator-pass")
+    crypto.lock()
+
+    import api.routers.kb as kb_router
+    importlib.reload(kb_router)  # fresh module-level limiter
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    app = FastAPI()
+    app.include_router(kb_router.router)
+    client = TestClient(app)
+
+    # default threshold is 5: the first 5 wrong tries are 401, then locked out
+    codes = [
+        client.post("/api/kb/unlock", json={"passphrase": "wrong"}).status_code
+        for _ in range(6)
+    ]
+    assert codes[:5] == [401] * 5
+    assert codes[5] == 429
+
+    # even the CORRECT passphrase is refused while the lockout window is open
+    r = client.post("/api/kb/unlock", json={"passphrase": "operator-pass"})
+    assert r.status_code == 429
+    assert "Retry-After" in r.headers
+    assert not crypto.is_unlocked()

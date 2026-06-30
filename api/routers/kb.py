@@ -20,6 +20,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Request
 
+from api.rate_limit import FailedAttemptLimiter
 from api.routers import chat as chat_router
 from api.schemas import ChangePassphraseRequest, KBDocumentRequest, UnlockRequest
 from core import kb_crypto
@@ -27,6 +28,10 @@ from core.loader import SUPPORTED_EXTENSIONS
 from core.path_guard import PathNotAllowed, safe_path
 
 router = APIRouter()
+
+# Throttles brute-force / scrypt-CPU abuse of the unauthenticated unlock endpoint.
+# Keyed by client IP; a correct passphrase clears the key.
+_unlock_limiter = FailedAttemptLimiter()
 
 # Documents are injected here only — a single fixed root, never client-chosen,
 # so injection can't write into eval/ or chroma_db/ even though those are also
@@ -75,12 +80,24 @@ def kb_status():
 
 
 @router.post("/api/kb/unlock")
-def kb_unlock(req: UnlockRequest):
+def kb_unlock(req: UnlockRequest, request: Request):
     """Derive the key from the passphrase and, on success, bring chat online."""
     if not kb_crypto.is_enabled():
         raise HTTPException(status_code=400, detail="KB encryption is not configured")
+    # Throttle before the expensive scrypt: a locked-out client is rejected
+    # without deriving a key, so brute-force and CPU-exhaustion both stall.
+    client = request.client.host if request.client else "unknown"
+    wait = _unlock_limiter.retry_after(client)
+    if wait > 0:
+        raise HTTPException(
+            status_code=429,
+            detail="Too many unlock attempts; try again later",
+            headers={"Retry-After": str(int(wait) + 1)},
+        )
     if not kb_crypto.unlock(req.passphrase):
+        _unlock_limiter.record_failure(client)
         raise HTTPException(status_code=401, detail="Incorrect passphrase")
+    _unlock_limiter.record_success(client)
     # Now that the key is loaded, build/attach the chat pipeline so the kiosk
     # works without a separate Load-KB step.
     try:
