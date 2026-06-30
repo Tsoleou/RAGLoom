@@ -32,11 +32,12 @@ jobs:
         with:
           python-version: "3.11"
           cache: pip
-      # The unit tests only touch chromadb-free code (RetrievalResult now
-      # lives in core.retrieval_types), so pytest is the only dependency —
-      # no need to install chromadb just to run them. Run from the repo root
-      # so the core/ and eval/ packages resolve without an editable install.
-      - run: pip install pytest
+      # The endpoint/crypto tests import the real app (fastapi) and the
+      # encryption layer (cryptography), which in turn pull in chromadb via
+      # core.pipeline, so the project's runtime deps must be installed — not
+      # just pytest. Editable install also makes the core/ and eval/ packages
+      # resolve. `.[dev]` brings in pytest + ruff.
+      - run: pip install -e ".[dev]"
       - run: python -m pytest -q
 
   frontend:

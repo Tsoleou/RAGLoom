@@ -27,7 +27,7 @@ from api.auth import (
     check_admin_auth,
 )
 from api.profiles_store import _migrate_legacy_profiles_if_needed
-from api.routers import chat, dashboard, eval, graph, profiles
+from api.routers import chat, dashboard, eval, graph, kb, profiles
 
 # 服務模式旗標：由 compose / Makefile serve 設 RAG_SERVE_MODE=1。開啟時 lifespan
 # 會自動初始化 chat_pipe（kiosk 免手動 Load KB）。dev --reload 與 offline pytest
@@ -65,7 +65,10 @@ async def lifespan(app: FastAPI):
     if _SERVE_MODE:
         try:
             count = chat.init_chat_pipe_if_needed()
-            print(f"[Server] Serve mode: chat_pipe ready ({count} chunks)")
+            if count < 0:
+                print("[Server] Serve mode: KB encrypted & locked — unlock at /admin to start chat")
+            else:
+                print(f"[Server] Serve mode: chat_pipe ready ({count} chunks)")
         except Exception as e:
             # 別讓初始化失敗擋掉整個 server；admin 仍可手動 Load KB 重試。
             print(f"[Server] WARNING: auto-init chat_pipe failed: {e}")
@@ -97,6 +100,7 @@ app.include_router(chat.router)
 app.include_router(profiles.router)
 app.include_router(eval.router)
 app.include_router(dashboard.router)
+app.include_router(kb.router)
 
 # ── Product images ─────────────────────────────────────────────────
 # 產品圖與產品文字資料同住 knowledge_base（source-of-truth 一處），但只掛

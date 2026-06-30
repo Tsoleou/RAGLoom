@@ -21,6 +21,7 @@ import sqlite3
 from datetime import datetime, timezone
 
 from api.product_catalog import display_name
+from core import kb_crypto
 
 # DB lives next to the repo root under data/. Override with RAG_QUERY_LOG_DB.
 _DB_PATH = os.environ.get("RAG_QUERY_LOG_DB", "./data/queries.db")
@@ -178,9 +179,14 @@ def log_query(
             ensure_ascii=False,
         )
 
+        # Encrypt the two columns that hold user/answer free text at rest. The
+        # rest (intent, gate, scores, product_id) are non-sensitive labels the
+        # dashboard groups on in SQL, so they stay plaintext. Pass-through when
+        # encryption is disabled. (log_query runs only on the served — i.e.
+        # unlocked — chat path, so the key is in memory here.)
         row = (
             datetime.now(timezone.utc).isoformat(),
-            query,
+            kb_crypto.encrypt_text(query),
             profile,
             model,
             latency_ms,
@@ -199,7 +205,7 @@ def log_query(
             rerank.get("total") if rerank else None,
             critique.get("verdict") if critique else None,
             (1 if critique.get("revised") else 0) if critique else None,
-            detail,
+            kb_crypto.encrypt_text(detail),
         )
         conn = _connect()
         try:
@@ -220,6 +226,58 @@ def log_query(
 
 
 # ── Read path (analytics) ───────────────────────────────────────────
+
+# Shown in place of a row's text when it can't be decrypted on read — the KB is
+# locked, or the row was encrypted under a since-replaced key. Read paths must
+# degrade gracefully (the dashboard is reachable while the KB is still locked,
+# e.g. right after boot); a raised KBLocked/InvalidToken here would 500 the
+# whole endpoint instead of just hiding the unreadable text.
+_LOCKED_LABEL = "🔒 (locked)"
+
+
+def _safe_decrypt(value: str) -> str | None:
+    """Decrypt a stored value for display/grouping, or None when it can't be
+    read right now. Plaintext passes straight through (decrypt_text is a no-op
+    without the envelope prefix), so this is safe to call on every row."""
+    try:
+        return kb_crypto.decrypt_text(value)
+    except Exception:  # noqa: BLE001 — locked / wrong-key / corrupt row: unreadable, not fatal
+        return None
+
+
+def _group_questions(queries, limit: int) -> list[dict]:
+    """Count near-identical questions (normalized: lowercased + trimmed),
+    keeping the first-seen original phrasing as the display representative.
+    Replaces a SQL GROUP BY that can't work once query text is encrypted."""
+    counts: dict[str, int] = {}
+    repr_text: dict[str, str] = {}
+    for q in queries:
+        key = (q or "").strip().lower()
+        if not key:
+            continue
+        counts[key] = counts.get(key, 0) + 1
+        repr_text.setdefault(key, q)
+    ranked = sorted(counts.items(), key=lambda kv: kv[1], reverse=True)[:limit]
+    return [{"query": repr_text[k], "count": c} for k, c in ranked]
+
+
+def _group_gaps(rows, limit: int) -> list[dict]:
+    """Group (query, top_score) pairs by normalized query → count + avg score.
+    Ordered by frequency desc, then weakest average retrieval first."""
+    agg: dict[str, list] = {}  # key → [count, score_sum, first_text]
+    for q, score in rows:
+        key = (q or "").strip().lower()
+        if not key or score is None:
+            continue
+        a = agg.setdefault(key, [0, 0.0, q])
+        a[0] += 1
+        a[1] += score
+    ranked = sorted(agg.items(), key=lambda kv: (-kv[1][0], kv[1][1] / kv[1][0]))[:limit]
+    return [
+        {"query": v[2], "count": v[0], "avg_top_score": round(v[1] / v[0], 4)}
+        for _, v in ranked
+    ]
+
 
 def _since_clause(days: int) -> tuple[str, list]:
     """Build a WHERE fragment limiting to the last `days` days (0 = all time)."""
@@ -275,8 +333,11 @@ def fetch_stats(days: int = 7) -> dict:
         # lives in the detail JSON blob.
         mention_counts: dict[str, int] = {}
         for r in cur.execute(f"SELECT detail FROM queries{where}", params).fetchall():
+            detail = _safe_decrypt(r["detail"] or "")
+            if detail is None:
+                continue  # locked / unreadable row — skip rather than 500 the stats
             try:
-                prods = (json.loads(r["detail"]) or {}).get("products") or []
+                prods = (json.loads(detail) or {}).get("products") or []
             except (ValueError, TypeError):
                 continue
             for pid in prods:
@@ -288,14 +349,18 @@ def fetch_stats(days: int = 7) -> dict:
         ]
 
         # Top questions — group near-identical phrasings (lowercased, trimmed)
-        # so marketing sees what people actually ask, by frequency.
-        tq = cur.execute(
-            f"""SELECT query, COUNT(*) c FROM queries{where}
-                {'AND' if where else 'WHERE'} query IS NOT NULL
-                GROUP BY lower(trim(query)) ORDER BY c DESC LIMIT 15""",
+        # so marketing sees what people actually ask, by frequency. Grouped in
+        # Python rather than SQL because the query text is encrypted at rest:
+        # each ciphertext is unique, so a SQL GROUP BY would never collapse
+        # repeats. Decrypt → normalize → count (no-op decrypt when plaintext).
+        tq_rows = cur.execute(
+            f"SELECT query FROM queries{where} {'AND' if where else 'WHERE'} query IS NOT NULL",
             params,
         ).fetchall()
-        top_questions = [{"query": r["query"], "count": r["c"]} for r in tq]
+        top_questions = _group_questions(
+            (t for r in tq_rows if (t := _safe_decrypt(r["query"] or "")) is not None),
+            limit=15,
+        )
 
         # Volume per day
         volume = cur.execute(
@@ -314,20 +379,20 @@ def fetch_stats(days: int = 7) -> dict:
         p95 = latencies[min(len(latencies) - 1, int(len(latencies) * 0.95))] if latencies else None
 
         # Knowledge gaps: answered (not blocked) but weak retrieval — recurring
-        # questions the KB struggles with. Grouped by normalized query text.
-        gaps = cur.execute(
-            f"""SELECT query, COUNT(*) c, AVG(top_score) avg_top
-                FROM queries{where}
+        # questions the KB struggles with. Grouped in Python (same encrypted-text
+        # reason as top_questions): fetch the weak-retrieval rows, decrypt, then
+        # group by normalized query with count + average top_score.
+        gap_rows = cur.execute(
+            f"""SELECT query, top_score FROM queries{where}
                 {'AND' if where else 'WHERE'} blocked = 0 AND top_score IS NOT NULL
-                  AND top_score < 0.45
-                GROUP BY lower(trim(query))
-                ORDER BY c DESC, avg_top ASC LIMIT 10""",
+                  AND top_score < 0.45""",
             params,
         ).fetchall()
-        knowledge_gaps = [
-            {"query": r["query"], "count": r["c"], "avg_top_score": round(r["avg_top"], 4)}
-            for r in gaps
-        ]
+        knowledge_gaps = _group_gaps(
+            ((t, r["top_score"]) for r in gap_rows
+             if (t := _safe_decrypt(r["query"] or "")) is not None),
+            limit=10,
+        )
 
         return {
             "days": days,
@@ -366,6 +431,8 @@ def fetch_recent(limit: int = 50, offset: int = 0) -> list[dict]:
         out = []
         for r in rows:
             d = dict(r)
+            q = _safe_decrypt(d.get("query") or "")
+            d["query"] = _LOCKED_LABEL if q is None else q  # at-rest decrypt; placeholder if unreadable
             d["product"] = display_name(d.get("product"))  # product_id → readable name
             out.append(d)
         return out
@@ -400,6 +467,8 @@ def fetch_all(days: int = 0) -> list[dict]:
         out = []
         for r in rows:
             d = dict(r)
+            q = _safe_decrypt(d.get("query") or "")
+            d["query"] = _LOCKED_LABEL if q is None else q  # at-rest decrypt; placeholder if unreadable
             d["product"] = display_name(d.get("product")) or (d.get("product") or "")
             out.append(d)
         return out

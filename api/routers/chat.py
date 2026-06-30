@@ -28,6 +28,7 @@ from api.profiles_store import _load_profiles
 from api.query_log import log_query
 from api.schemas import ChatQueryRequest, ChatResetRequest
 from config.settings import Settings
+from core import kb_crypto
 from core.pipeline import RAGPipeline
 
 router = APIRouter()
@@ -90,10 +91,52 @@ def init_chat_pipe_if_needed() -> int:
     global chat_pipe
     if chat_pipe is not None:
         return chat_pipe.collection.count()
+    # Encrypted KB can't be read without the key — defer init until the operator
+    # unlocks (see /api/unlock, which calls this again on success). Returning -1
+    # signals "waiting for unlock" without crashing serve-mode startup.
+    if kb_crypto.is_enabled() and not kb_crypto.is_unlocked():
+        print("[Server] KB encryption locked — chat_pipe init deferred until /api/unlock")
+        return -1
     pipe = RAGPipeline(Settings(score_threshold=0.0))
     if pipe.collection.count() == 0:
         pipe.ingest("./knowledge_base")
     chat_pipe = pipe
+    return chat_pipe.collection.count()
+
+
+def reingest_file(path: str) -> int:
+    """Ingest (or re-ingest) a single source file into the live chat_pipe.
+
+    Used by the operator document-injection endpoints. Drops any existing chunks
+    for that filename first so editing a file in place doesn't leave orphaned
+    stale chunks behind, then runs the normal load→chunk→embed→store path (which
+    encrypts the chunk text on write). Builds chat_pipe on demand if chat hasn't
+    been initialized yet. Returns the collection's total chunk count after.
+    """
+    global chat_pipe
+    if chat_pipe is None:
+        chat_pipe = RAGPipeline(Settings(score_threshold=0.0))
+    filename = path.rsplit("/", 1)[-1]
+    try:
+        chat_pipe.collection.delete(where={"filename": filename})
+    except Exception as e:  # noqa: BLE001 — empty/absent is fine, keep going
+        print(f"[Server] reingest_file: delete old chunks for {filename}: {e}")
+    chat_pipe.ingest(path)
+    chat_pipe._product_ids = chat_pipe._collect_product_ids()
+    return chat_pipe.collection.count()
+
+
+def remove_file_chunks(filename: str) -> int:
+    """Delete all chunks for a filename from the live collection. Returns the
+    collection's total chunk count after (or -1 if chat isn't initialized)."""
+    global chat_pipe
+    if chat_pipe is None:
+        return -1
+    try:
+        chat_pipe.collection.delete(where={"filename": filename})
+        chat_pipe._product_ids = chat_pipe._collect_product_ids()
+    except Exception as e:  # noqa: BLE001
+        print(f"[Server] remove_file_chunks {filename}: {e}")
     return chat_pipe.collection.count()
 
 
@@ -105,6 +148,8 @@ def chat_ingest():
     leave orphan chunks behind on repeated ingests.
     """
     global chat_pipe
+    if kb_crypto.is_enabled() and not kb_crypto.is_unlocked():
+        return {"status": "locked", "message": "KB encryption locked — unlock first"}
     try:
         chat_pipe = RAGPipeline(Settings(score_threshold=0.0))
         chat_pipe.reset_collection()
@@ -118,6 +163,8 @@ def chat_ingest():
 def chat_query(req: ChatQueryRequest):
     """Run a single chat turn through the active profile's graph."""
     if chat_pipe is None:
+        if kb_crypto.is_enabled() and not kb_crypto.is_unlocked():
+            return {"status": "locked", "message": "知識庫已加密鎖定，請操作者先解鎖。"}
         return {"status": "error", "message": "Knowledge base not loaded"}
 
     if not req.message.strip():

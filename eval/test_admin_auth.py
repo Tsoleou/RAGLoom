@@ -32,8 +32,13 @@ def settings_state():
 
 # ── check_admin_auth ────────────────────────────────────────────────
 
-def test_unset_password_allows_everything(settings_state):
+def test_unset_password_allows_everything(settings_state, monkeypatch, tmp_path):
     settings_state.api_admin_password = ""
+    # Pin the keystore at a nonexistent path so is_enabled() is deterministically
+    # False — otherwise a real ./config/kb_keystore.json on the host would flip
+    # this legacy "no creds → open" assertion. (The encrypted-but-no-password
+    # case — now gated — is covered in test_kb_endpoints.py.)
+    monkeypatch.setenv("RAG_KB_KEYSTORE", str(tmp_path / "absent.json"))
     assert auth.check_admin_auth({}) is True
 
 
