@@ -318,9 +318,11 @@ The knowledge base can be encrypted on disk — source files, the vector store's
 make kb-encrypt          # or: venv/bin/python -m tools.encrypt_kb
 ```
 
-This prompts for a passphrase, creates a keystore (salt + verifier only — **no passphrase or key is stored**), encrypts every source file, rebuilds the vector store as ciphertext, and securely wipes the old plaintext store.
+This prompts for a passphrase, creates a keystore (KDF salt + the master key *wrapped* under the passphrase — **no passphrase or unwrapped key is stored**), encrypts every source file, rebuilds the vector store as ciphertext, and securely wipes the old plaintext store.
 
-**Key model (hybrid unlock).** The passphrase is entered at runtime, never persisted; the derived key lives in memory only. After each server start the KB is **locked** — chat returns a "locked" notice and the unattended kiosk auto-init waits. The operator opens `/admin`, enters the passphrase once (unlock screen) → `POST /api/kb/unlock` derives the key and brings chat online. This defends against full-disk theft, at the cost of one unlock per boot. Set `RAG_ADMIN_PASSWORD` to the **same** passphrase so one secret covers both admin login and KB unlock.
+**Key model (hybrid unlock, two-tier keys).** A random *master key* encrypts the data; the keystore holds it wrapped under a key derived from the passphrase. The passphrase is entered at runtime, never persisted; the unwrapped master key lives in memory only. After each server start the KB is **locked** — chat returns a "locked" notice and the unattended kiosk auto-init waits. The operator opens `/admin`, enters the passphrase once (unlock screen) → `POST /api/kb/unlock` unwraps the key and brings chat online. This defends against full-disk theft, at the cost of one unlock per boot. Set `RAG_ADMIN_PASSWORD` to the **same** passphrase so one secret covers both admin login and KB unlock.
+
+**Changing the passphrase.** `make kb-rotate` (or `POST /api/kb/change-passphrase` from `/admin`) re-wraps the master key under a new passphrase. Because the master key itself doesn't change, **no data is re-encrypted** — rotation is instant, and existing ciphertext stays valid. Use it for operator/staff turnover. The old passphrase stops working immediately.
 
 - Lose the passphrase → the KB is unrecoverable (by design).
 - Public product images (`knowledge_base/product_images/`, served at `/product_images`) stay plaintext.

@@ -21,7 +21,7 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException, Request
 
 from api.routers import chat as chat_router
-from api.schemas import KBDocumentRequest, UnlockRequest
+from api.schemas import ChangePassphraseRequest, KBDocumentRequest, UnlockRequest
 from core import kb_crypto
 from core.loader import SUPPORTED_EXTENSIONS
 from core.path_guard import PathNotAllowed, safe_path
@@ -96,6 +96,22 @@ def kb_lock():
     kb_crypto.lock()
     chat_router.chat_pipe = None
     return {"status": "ok", "unlocked": False}
+
+
+@router.post("/api/kb/change-passphrase")
+def kb_change_passphrase(req: ChangePassphraseRequest):
+    """Rotate the encryption passphrase (re-wraps the master key; no data is
+    re-encrypted). Admin-gated like other mutating endpoints; the caller proves
+    authorization by supplying the current passphrase."""
+    if not kb_crypto.is_enabled():
+        raise HTTPException(status_code=400, detail="KB encryption is not configured")
+    try:
+        ok = kb_crypto.change_passphrase(req.old_passphrase, req.new_passphrase)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    if not ok:
+        raise HTTPException(status_code=401, detail="Current passphrase is incorrect")
+    return {"status": "ok"}
 
 
 # ── Document injection ──────────────────────────────────────────────

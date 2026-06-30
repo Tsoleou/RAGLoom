@@ -88,6 +88,17 @@ except kb_crypto.KBLocked:
 check("wrong passphrase rejected", kb_crypto.unlock("nope") is False)
 check("correct passphrase unlocks", kb_crypto.unlock("smoke-test-pass") is True)
 
+# 4b) Passphrase rotation (two-tier key): data stays readable, old pass revoked
+print("4b. Passphrase rotation")
+probe = kb_crypto.encrypt_text("rotation-probe-token")
+check("change_passphrase succeeds", kb_crypto.change_passphrase("smoke-test-pass", "smoke-test-pass-2"))
+check("data readable after rotation", kb_crypto.decrypt_text(probe) == "rotation-probe-token")
+kb_crypto.lock()
+check("old passphrase revoked", kb_crypto.unlock("smoke-test-pass") is False)
+check("new passphrase works", kb_crypto.unlock("smoke-test-pass-2") is True)
+# restore the original passphrase so later steps read naturally
+kb_crypto.change_passphrase("smoke-test-pass-2", "smoke-test-pass")
+
 # 5) Query-log encryption round-trip
 print("5. Query-log encryption")
 from api import query_log

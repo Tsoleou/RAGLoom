@@ -62,6 +62,12 @@ class UnlockRequest(BaseModel):
     passphrase: str = Field(..., min_length=1, max_length=256)
 
 
+class ChangePassphraseRequest(BaseModel):
+    # Rotate the KB encryption passphrase. Neither value is persisted.
+    old_passphrase: str = Field(..., min_length=1, max_length=256)
+    new_passphrase: str = Field(..., min_length=8, max_length=256)
+
+
 class KBDocumentRequest(BaseModel):
     # Inject a document by pasted text (alternative to multipart upload).
     filename: str = Field(..., min_length=1, max_length=128)

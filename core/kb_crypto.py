@@ -13,10 +13,14 @@ Key model — *hybrid operator-unlock* (chosen for disk-theft resistance):
   - A passphrase is entered at runtime via ``POST /api/unlock``; it is NEVER
     written to disk. The derived key lives in process memory until ``lock()``
     or shutdown.
-  - The on-disk keystore holds only a KDF salt + parameters + a *verifier*
-    token (a known plaintext encrypted under the key). It contains neither the
-    passphrase nor the key, so copying the whole disk yields ciphertext with no
-    way to read it.
+  - Two-tier keys: a random *master key* actually encrypts the data; the
+    keystore stores that master key *wrapped* (encrypted) under the
+    passphrase-derived key, plus the KDF salt + parameters. It contains neither
+    the passphrase nor an unwrapped key, so copying the whole disk yields
+    ciphertext with no way to read it. Changing the passphrase only re-wraps the
+    master key — no data is re-encrypted (see :func:`change_passphrase`).
+    Legacy v1 keystores (passphrase-derived key used directly) are still
+    readable and are upgraded to v2 on the next passphrase change.
   - Cost of this property: someone must unlock once per boot; the unattended
     kiosk auto-init is intentionally gated behind unlock.
 
@@ -31,6 +35,7 @@ import hmac
 import json
 import os
 import secrets
+import tempfile
 from pathlib import Path
 
 from cryptography.fernet import Fernet, InvalidToken
@@ -80,6 +85,57 @@ def _derive_key(passphrase: str, salt: bytes, *, n: int, r: int, p: int) -> byte
     return base64.urlsafe_b64encode(raw)
 
 
+def _atomic_write_json(path: Path, obj: dict) -> None:
+    """Write the keystore atomically (temp file + os.replace). A torn write
+    here would orphan the salt/wrapped-key and lose all encrypted data."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=str(path.parent), prefix=".ks-")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(obj, f, indent=2)
+        os.replace(tmp, path)
+    finally:
+        if os.path.exists(tmp):
+            os.unlink(tmp)
+
+
+def _recover_master(ks: dict, passphrase: str) -> bytes | None:
+    """Return the master data key for ``passphrase``, or None if it's wrong.
+
+    v2 keystores store the master key wrapped under the passphrase-derived key.
+    v1 keystores have no wrapped key — the passphrase-derived key *is* the data
+    key, verified against the stored verifier token."""
+    try:
+        salt = base64.b64decode(ks["salt"])
+        kek = _derive_key(
+            passphrase, salt,
+            n=ks.get("n", _SCRYPT_N), r=ks.get("r", _SCRYPT_R), p=ks.get("p", _SCRYPT_P),
+        )
+        if "wrapped_key" in ks:  # v2
+            return Fernet(kek).decrypt(ks["wrapped_key"].encode("ascii"))
+        # v1: data key == kek; confirm via the verifier token
+        if Fernet(kek).decrypt(ks["verifier"].encode("ascii")) == _VERIFIER_PLAINTEXT:
+            return kek
+        return None
+    except (InvalidToken, ValueError, KeyError):
+        return None
+
+
+def _wrap_keystore(master: bytes, passphrase: str) -> dict:
+    """Build a v2 keystore that wraps ``master`` under ``passphrase`` (fresh salt)."""
+    salt = secrets.token_bytes(16)
+    kek = _derive_key(passphrase, salt, n=_SCRYPT_N, r=_SCRYPT_R, p=_SCRYPT_P)
+    return {
+        "version": 2,
+        "kdf": "scrypt",
+        "salt": base64.b64encode(salt).decode("ascii"),
+        "n": _SCRYPT_N,
+        "r": _SCRYPT_R,
+        "p": _SCRYPT_P,
+        "wrapped_key": Fernet(kek).encrypt(master).decode("ascii"),
+    }
+
+
 # ── Status ──────────────────────────────────────────────────────────
 
 def is_enabled() -> bool:
@@ -113,22 +169,12 @@ def init_keystore(passphrase: str) -> None:
     if not passphrase:
         raise ValueError("passphrase must not be empty")
 
-    salt = secrets.token_bytes(16)
-    key = _derive_key(passphrase, salt, n=_SCRYPT_N, r=_SCRYPT_R, p=_SCRYPT_P)
-    verifier = Fernet(key).encrypt(_VERIFIER_PLAINTEXT).decode("ascii")
-
-    keystore = {
-        "version": 1,
-        "kdf": "scrypt",
-        "salt": base64.b64encode(salt).decode("ascii"),
-        "n": _SCRYPT_N,
-        "r": _SCRYPT_R,
-        "p": _SCRYPT_P,
-        "verifier": verifier,
-    }
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(keystore, indent=2), encoding="utf-8")
-    _key = key
+    # Generate a random master key (the actual data key) and store it wrapped
+    # under the passphrase — so the passphrase can later be changed without
+    # re-encrypting any data.
+    master = Fernet.generate_key()
+    _atomic_write_json(path, _wrap_keystore(master, passphrase))
+    _key = master
     _passphrase = passphrase
     print(f"[KBCrypto] Keystore initialized at {path}")
 
@@ -144,20 +190,40 @@ def unlock(passphrase: str) -> bool:
         raise FileNotFoundError(f"no keystore at {path}; encryption not configured")
 
     ks = json.loads(path.read_text(encoding="utf-8"))
-    salt = base64.b64decode(ks["salt"])
-    key = _derive_key(
-        passphrase, salt,
-        n=ks.get("n", _SCRYPT_N), r=ks.get("r", _SCRYPT_R), p=ks.get("p", _SCRYPT_P),
-    )
-    try:
-        if Fernet(key).decrypt(ks["verifier"].encode("ascii")) != _VERIFIER_PLAINTEXT:
-            return False
-    except (InvalidToken, ValueError, KeyError):
+    master = _recover_master(ks, passphrase)
+    if master is None:
         return False
 
-    _key = key
+    _key = master
     _passphrase = passphrase
     print("[KBCrypto] Unlocked")
+    return True
+
+
+def change_passphrase(old: str, new: str) -> bool:
+    """Re-wrap the master key under a new passphrase. Returns False if ``old``
+    is wrong. Does NOT re-encrypt any data — the master key is unchanged, so all
+    existing ciphertext stays valid. A legacy v1 keystore is upgraded to v2
+    here (its passphrase-derived data key becomes the wrapped master key).
+
+    Raises FileNotFoundError if encryption isn't configured, ValueError if the
+    new passphrase is too weak."""
+    global _key, _passphrase
+    path = _keystore_file()
+    if not path.is_file():
+        raise FileNotFoundError(f"no keystore at {path}; encryption not configured")
+    if not new or len(new) < 8:
+        raise ValueError("new passphrase must be at least 8 characters")
+
+    ks = json.loads(path.read_text(encoding="utf-8"))
+    master = _recover_master(ks, old)
+    if master is None:
+        return False  # wrong current passphrase — keystore left untouched
+
+    _atomic_write_json(path, _wrap_keystore(master, new))
+    _key = master
+    _passphrase = new
+    print("[KBCrypto] Passphrase changed")
     return True
 
 

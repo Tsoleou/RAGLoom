@@ -50,3 +50,12 @@ def test_endpoints_lock_unlock_and_guards(crypto, tmp_path, monkeypatch):
     for bad in ("../escape.txt", "no_ext", "evil.exe"):
         r = client.post("/api/kb/documents", json={"filename": bad, "content": "x"})
         assert r.status_code == 400, bad
+
+    # change-passphrase: wrong current → 401; correct → 200 and new one works
+    assert client.post("/api/kb/change-passphrase", json={
+        "old_passphrase": "WRONG", "new_passphrase": "brand-new-pass"}).status_code == 401
+    assert client.post("/api/kb/change-passphrase", json={
+        "old_passphrase": "operator-pass", "new_passphrase": "brand-new-pass"}).status_code == 200
+    crypto.lock()
+    assert crypto.unlock("operator-pass") is False
+    assert crypto.unlock("brand-new-pass") is True
