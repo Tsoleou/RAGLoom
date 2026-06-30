@@ -44,9 +44,11 @@ def critique_answer(
     Two operating modes:
       - **Rules-only** (default): checks the answer against `criteria` only.
       - **Grounded**: when `query` and/or `context` are provided, also checks
-        whether the answer (1) addresses the actual question and (2) stays
-        grounded in the retrieved context. Catches hallucinated specs and
-        off-target answers that pure rule-checks miss.
+        whether the answer (1) addresses the actual question and (2) only names
+        products/models present in the sources. Catches off-target answers and
+        hallucinated *products* that pure rule-checks miss. It deliberately does
+        NOT police spec numbers/measurements — gemma3:4b is numerically blind and
+        false-rejects grounded specs; numeric grounding is a code concern.
 
     Returns CritiqueResult with pass/fail + short reason.
     Network/parse failures degrade gracefully to "passed=True" so a flaky
@@ -61,15 +63,18 @@ def critique_answer(
             "and a list of negative rules.\n\n"
             "Decide if the answer:\n"
             "1. Actually addresses the user's question.\n"
-            "2. Uses ONLY facts present in the retrieved context OR the reference "
-            "material — do not let it invent specs, model names, prices, or "
-            "features that appear in NEITHER source.\n"
+            "2. Only names products or models that appear in the retrieved context "
+            "OR the reference material — do not let it recommend or mention a "
+            "product that appears in NEITHER source.\n"
             "3. Respects every negative rule below.\n\n"
+            "Do NOT judge whether individual specs, numbers, measurements, or "
+            "prices match the sources — that is checked separately. Treat the "
+            "numeric details as correct.\n\n"
             "Output ONLY a valid JSON object with exactly two fields:\n"
             '- "pass": boolean — true only if ALL three conditions hold.\n'
             '- "reason": short string explaining the verdict (max 1 sentence).\n\n'
             'Example PASS: {"pass": true, "reason": "Grounded answer to the question."}\n'
-            'Example FAIL: {"pass": false, "reason": "Cited a clock speed not in the context."}'
+            'Example FAIL: {"pass": false, "reason": "Recommended a product that appears in neither source."}'
         )
         user_parts = []
         if query.strip():

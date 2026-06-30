@@ -727,8 +727,9 @@ def execute_output_critic(inputs: dict, params: dict) -> dict:
         off-target answers — it doesn't know what was asked or retrieved.
       - **Grounded**: when `query` and/or `retrieval` are also wired, the
         critic additionally checks that the answer addresses the question and
-        is grounded in the retrieved context. Catches hallucinated specs and
-        off-target answers that rule checks alone miss.
+        only names products present in the sources. Catches off-target answers
+        and hallucinated products that rule checks alone miss. It does NOT police
+        spec numbers — 4B is numerically blind and false-rejects grounded specs.
     """
     answer = inputs["answer_in"]
     if answer is None:
