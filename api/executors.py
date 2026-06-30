@@ -345,6 +345,7 @@ def execute_retrieval_judge(inputs: dict, params: dict) -> dict:
     query = inputs.get("query", "") or ""
     candidates = inputs.get("results_in") or []
     model = params.get("model", "gemma3:4b")
+    floor = int(params.get("floor", 3))
     settings = Settings()
 
     kept, verdicts = judge_retrieval(
@@ -352,6 +353,7 @@ def execute_retrieval_judge(inputs: dict, params: dict) -> dict:
         results=candidates,
         model=model,
         base_url=settings.ollama_base_url,
+        floor=floor,
     )
 
     # Serialize verdicts for both downstream nodes and the chat panel.
@@ -604,6 +606,8 @@ def execute_generator(inputs: dict, params: dict) -> dict:
         # editor path injects nothing and stays single-shot.
         messages=inputs.get("messages") or [],
         base_url=settings.ollama_base_url,
+        num_ctx=int(params.get("num_ctx", 8192)),
+        history_limit=int(params.get("history_limit", 12)),
     )
 
     if isinstance(format_type, dict):

@@ -257,7 +257,9 @@ _register(NodeType(
         "misses — e.g., a chunk literally saying 'NOT suitable for high-performance' "
         "no longer ranks as a high-performance recommendation. One batched LLM call "
         "per query (independent of K). Degrades to keep-everything on any judge "
-        "error so a flaky model can't hide good chunks."
+        "error so a flaky model can't hide good chunks. A floor guarantees the "
+        "judge can never prune below N chunks (restored by retrieval score) so a "
+        "tiny over-pruning judge can't starve generation of context."
     ),
     category="query",
     inputs=[
@@ -270,6 +272,7 @@ _register(NodeType(
     ],
     params=[
         ParamDef("model", "Model", "string", "gemma3:4b"),
+        ParamDef("floor", "Min Kept (floor)", "number", 3),
     ],
 ))
 
@@ -534,6 +537,8 @@ _register(NodeType(
     params=[
         ParamDef("model", "Model", "string", "gemma3:4b"),
         ParamDef("format_type", "Format Override", "select", "", options=["", "json"]),
+        ParamDef("num_ctx", "Context Window (tokens)", "number", 8192),
+        ParamDef("history_limit", "Max History Messages", "number", 12),
     ],
 ))
 
