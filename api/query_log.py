@@ -245,6 +245,12 @@ def _safe_decrypt(value: str) -> str | None:
         return None
 
 
+def _norm_key(q: str) -> str:
+    """The normalization both groupings collapse on (lowercase + trim). Defined
+    once so the bucketing rule stays consistent if it ever changes."""
+    return (q or "").strip().lower()
+
+
 def _group_questions(queries, limit: int) -> list[dict]:
     """Count near-identical questions (normalized: lowercased + trimmed),
     keeping the first-seen original phrasing as the display representative.
@@ -252,7 +258,7 @@ def _group_questions(queries, limit: int) -> list[dict]:
     counts: dict[str, int] = {}
     repr_text: dict[str, str] = {}
     for q in queries:
-        key = (q or "").strip().lower()
+        key = _norm_key(q)
         if not key:
             continue
         counts[key] = counts.get(key, 0) + 1
@@ -266,7 +272,7 @@ def _group_gaps(rows, limit: int) -> list[dict]:
     Ordered by frequency desc, then weakest average retrieval first."""
     agg: dict[str, list] = {}  # key → [count, score_sum, first_text]
     for q, score in rows:
-        key = (q or "").strip().lower()
+        key = _norm_key(q)
         if not key or score is None:
             continue
         a = agg.setdefault(key, [0, 0.0, q])

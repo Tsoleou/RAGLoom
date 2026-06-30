@@ -68,6 +68,17 @@ class KBLocked(Exception):
 # ── In-memory key state (never persisted) ───────────────────────────
 _key: bytes | None = None          # Fernet key (url-safe base64 of scrypt output)
 _passphrase: str | None = None     # kept so admin Basic Auth can reuse one secret
+_fernet: Fernet | None = None      # cipher cached for _key (rebuilt on each unlock)
+
+
+def _load_key(master: bytes, passphrase: str) -> None:
+    """Load the data key into memory and cache its Fernet cipher. The cipher is
+    rebuilt only here (unlock / init / passphrase change), not per encrypt or
+    decrypt call — those run in retrieval and dashboard hot loops."""
+    global _key, _passphrase, _fernet
+    _key = master
+    _passphrase = passphrase
+    _fernet = Fernet(master)
 
 
 def _keystore_file() -> Path:
@@ -162,7 +173,6 @@ def init_keystore(passphrase: str) -> None:
 
     Raises FileExistsError if a keystore is already present (refuse to clobber —
     overwriting the salt would orphan every previously-encrypted byte)."""
-    global _key, _passphrase
     path = _keystore_file()
     if path.is_file():
         raise FileExistsError(f"keystore already exists: {path}")
@@ -174,8 +184,7 @@ def init_keystore(passphrase: str) -> None:
     # re-encrypting any data.
     master = Fernet.generate_key()
     _atomic_write_json(path, _wrap_keystore(master, passphrase))
-    _key = master
-    _passphrase = passphrase
+    _load_key(master, passphrase)
     print(f"[KBCrypto] Keystore initialized at {path}")
 
 
@@ -184,7 +193,6 @@ def unlock(passphrase: str) -> bool:
     the keystore verifier. Returns True on success, False on wrong passphrase.
 
     Raises FileNotFoundError if encryption isn't configured (no keystore)."""
-    global _key, _passphrase
     path = _keystore_file()
     if not path.is_file():
         raise FileNotFoundError(f"no keystore at {path}; encryption not configured")
@@ -194,8 +202,7 @@ def unlock(passphrase: str) -> bool:
     if master is None:
         return False
 
-    _key = master
-    _passphrase = passphrase
+    _load_key(master, passphrase)
     print("[KBCrypto] Unlocked")
     return True
 
@@ -208,7 +215,6 @@ def change_passphrase(old: str, new: str) -> bool:
 
     Raises FileNotFoundError if encryption isn't configured, ValueError if the
     new passphrase is too weak."""
-    global _key, _passphrase
     path = _keystore_file()
     if not path.is_file():
         raise FileNotFoundError(f"no keystore at {path}; encryption not configured")
@@ -221,17 +227,17 @@ def change_passphrase(old: str, new: str) -> bool:
         return False  # wrong current passphrase — keystore left untouched
 
     _atomic_write_json(path, _wrap_keystore(master, new))
-    _key = master
-    _passphrase = new
+    _load_key(master, new)
     print("[KBCrypto] Passphrase changed")
     return True
 
 
 def lock() -> None:
     """Drop the in-memory key/passphrase. Subsequent crypto raises KBLocked."""
-    global _key, _passphrase
+    global _key, _passphrase, _fernet
     _key = None
     _passphrase = None
+    _fernet = None
     print("[KBCrypto] Locked")
 
 
@@ -252,9 +258,9 @@ def encrypt_text(plaintext: str) -> str:
     is disabled. Raises KBLocked when enabled but not unlocked."""
     if not is_enabled():
         return plaintext
-    if _key is None:
+    if _fernet is None:
         raise KBLocked("KB encryption is enabled but locked")
-    token = Fernet(_key).encrypt(plaintext.encode("utf-8")).decode("ascii")
+    token = _fernet.encrypt(plaintext.encode("utf-8")).decode("ascii")
     return _MAGIC_TEXT + token
 
 
@@ -270,10 +276,10 @@ def decrypt_text(value: str) -> str:
     actually-encrypted value is encountered while locked."""
     if not isinstance(value, str) or not value.startswith(_MAGIC_TEXT):
         return value
-    if _key is None:
+    if _fernet is None:
         raise KBLocked("encountered encrypted data while locked")
     token = value[len(_MAGIC_TEXT):].encode("ascii")
-    return Fernet(_key).decrypt(token).decode("utf-8")
+    return _fernet.decrypt(token).decode("utf-8")
 
 
 # ── Bytes crypto (whole source files: txt/md/csv/pdf) ───────────────
@@ -281,17 +287,17 @@ def decrypt_text(value: str) -> str:
 def encrypt_bytes(data: bytes) -> bytes:
     if not is_enabled():
         return data
-    if _key is None:
+    if _fernet is None:
         raise KBLocked("KB encryption is enabled but locked")
-    return _MAGIC_BYTES + Fernet(_key).encrypt(data)
+    return _MAGIC_BYTES + _fernet.encrypt(data)
 
 
 def decrypt_bytes(data: bytes) -> bytes:
     if not isinstance(data, (bytes, bytearray)) or not data.startswith(_MAGIC_BYTES):
         return bytes(data)
-    if _key is None:
+    if _fernet is None:
         raise KBLocked("encountered encrypted data while locked")
-    return Fernet(_key).decrypt(bytes(data[len(_MAGIC_BYTES):]))
+    return _fernet.decrypt(bytes(data[len(_MAGIC_BYTES):]))
 
 
 def is_encrypted_bytes(data: bytes) -> bool:
