@@ -64,6 +64,7 @@ from core.eval_metrics import (
 from pathlib import Path
 from core.product_matcher import detect_product_filter, DEFAULT_BRAND_ALIASES
 import json
+import re
 
 
 # Path guard 共用 Settings 一次（避免每次節點執行都重讀 .env）。允許的根目錄
@@ -675,6 +676,25 @@ def _product_anchors(retrieval_results: list) -> set:
     return anchors
 
 
+_NUM_RE = re.compile(r"\d+(?:\.\d+)?")
+
+
+def _numeric_tokens(text: str) -> set:
+    """All numbers in a string as exact tokens (e.g. {'1.7', '4070', '32', '1000'}).
+
+    Used to detect when a 4B revise silently dropped or altered a spec number.
+    Units are ignored — '1.7 kg' and '1.7 公斤' both yield '1.7' — so a legitimate
+    unit rephrase doesn't trip the guard; only a missing/changed digit does.
+    """
+    return set(_NUM_RE.findall(text or ""))
+
+
+def _dropped_spec_numbers(original: str, revised: str) -> set:
+    """Numbers present in `original` but gone from `revised` — the spec digits a
+    rewrite lost (model numbers, weights, capacities). Empty set = nothing lost."""
+    return _numeric_tokens(original) - _numeric_tokens(revised)
+
+
 def _lost_product(original: str, revised: str, anchors: set) -> bool:
     """True if `original` named a retrieved product but `revised` named none —
     i.e. the revise pass gutted the answer down to generic filler."""
@@ -731,8 +751,9 @@ def execute_output_critic(inputs: dict, params: dict) -> dict:
         off-target answers — it doesn't know what was asked or retrieved.
       - **Grounded**: when `query` and/or `retrieval` are also wired, the
         critic additionally checks that the answer addresses the question and
-        is grounded in the retrieved context. Catches hallucinated specs and
-        off-target answers that rule checks alone miss.
+        only names products present in the sources. Catches off-target answers
+        and hallucinated products that rule checks alone miss. It does NOT police
+        spec numbers — 4B is numerically blind and false-rejects grounded specs.
     """
     answer = inputs["answer_in"]
     if answer is None:
@@ -787,6 +808,7 @@ def execute_output_critic(inputs: dict, params: dict) -> dict:
     revised = False
     regenerated = False
     fell_back = False
+    spec_reverted = False
     final_text = original_text
 
     if not verdict.passed and mode in ("revise", "revise+regen"):
@@ -809,10 +831,26 @@ def execute_output_critic(inputs: dict, params: dict) -> dict:
             )
         revised = True
 
+        # Spec-preservation guard (code, not the model): a 4B rewrite silently
+        # drops/alters grounded spec numbers — e.g. "RTX 4070" → "a graphics
+        # card", or a weight vanishing — especially when the critique blamed
+        # "invented specs". Numeric judgment can't live in a numerically-blind
+        # model, so check in code: if the revise lost any number the original
+        # had, distrust the rewrite and keep the original answer. A stray
+        # buzzword surviving is far less harmful than serving a wrong/missing
+        # spec. Runs before the regen step so a reverted answer doesn't look
+        # "gutted" and trigger an unnecessary regenerate.
+        dropped = _dropped_spec_numbers(original_text, final_text)
+        if dropped:
+            print(f"[Executor:OutputCritic] revise dropped spec numbers {sorted(dropped)} → keeping original")
+            final_text = original_text
+            revised = False
+            spec_reverted = True
+
         # Step 2 — "revise+regen" only: if the revise gutted the answer (named
         # a retrieved product before, none after), regenerate a grounded answer
         # instead of serving generic filler. Plain "revise" stops at Step 1.
-        if mode == "revise+regen":
+        if mode == "revise+regen" and not spec_reverted:
             anchors = _product_anchors(retrieval_results)
             if _lost_product(original_text, final_text, anchors):
                 print(f"[Executor:OutputCritic] revise dropped all products {sorted(anchors)} → regenerating")
@@ -862,6 +900,7 @@ def execute_output_critic(inputs: dict, params: dict) -> dict:
         "revised": revised,
         "regenerated": regenerated,
         "fallback": fell_back,
+        "spec_reverted": spec_reverted,
         "mode": mode,
         "grounded": grounded,
     }

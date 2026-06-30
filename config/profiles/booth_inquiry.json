@@ -160,7 +160,7 @@
         "y": 340
       },
       "params": {
-        "criteria": "Do not mention competitor brand names like Asus, Acer, MSI, HP, Dell, or Apple.\nDo not promise specific pricing, availability, or release dates.\nDo not invent technical specifications not present in the source material.\nDo not use marketing buzzwords like \"amazing\", \"revolutionary\", \"industry-leading\", \"best-in-class\".",
+        "criteria": "Do not mention competitor brand names like Asus, Acer, MSI, HP, Dell, or Apple.\nDo not promise specific pricing, availability, or release dates.\nDo not use marketing buzzwords like \"amazing\", \"revolutionary\", \"industry-leading\", \"best-in-class\".",
         "mode": "revise",
         "model": "gemma3:4b"
       }

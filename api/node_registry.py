@@ -573,7 +573,6 @@ _register(NodeType(
             (
                 "Do not mention competitor brand names like Asus, Acer, MSI, HP, Dell, or Apple.\n"
                 "Do not promise specific pricing, availability, or release dates.\n"
-                "Do not invent technical specifications not present in the source material.\n"
                 "Do not use marketing buzzwords like \"amazing\", \"revolutionary\", \"industry-leading\", \"best-in-class\"."
             ),
         ),
