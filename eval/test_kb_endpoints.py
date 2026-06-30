@@ -135,3 +135,31 @@ def test_unlock_endpoint_rate_limits_brute_force(crypto):
     assert r.status_code == 429
     assert "Retry-After" in r.headers
     assert not crypto.is_unlocked()
+
+
+def test_upload_size_cap_rejects_before_ingest(crypto):
+    """S4: oversized uploads are rejected by the size cap BEFORE _write_and_ingest
+    runs, and without buffering the whole body. Encryption stays disabled here so
+    _require_unlocked passes; the 413/400 short-circuit needs neither Ollama nor
+    chroma."""
+    import api.routers.kb as kb_router
+    importlib.reload(kb_router)
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    app = FastAPI()
+    app.include_router(kb_router.router)
+    client = TestClient(app)
+
+    over = kb_router._MAX_DOC_BYTES + 1
+
+    # declared Content-Length over the cap → 413 (TestClient sets Content-Length)
+    assert client.put("/api/kb/documents/big.txt", content=b"x" * over).status_code == 413
+
+    # no/under-declared length (chunked stream) still capped by the running total
+    def _chunked():
+        for _ in range(over // 100_000 + 1):
+            yield b"x" * 100_000
+    assert client.put("/api/kb/documents/chunked.txt", content=_chunked()).status_code == 413
+
+    # empty body → 400
+    assert client.put("/api/kb/documents/empty.txt", content=b"").status_code == 400

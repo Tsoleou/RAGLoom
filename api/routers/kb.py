@@ -40,6 +40,9 @@ _KB_ROOT = "./knowledge_base"
 # Conservative filename rule: a single path segment, known extension, no dotfiles
 # or separators. Keeps the product_<id> convention loaders rely on intact.
 _SAFE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
+# Upload/paste size ceiling (mirrors the paste limit in api/schemas.py). Booth
+# docs are small; the cap bounds the encrypt+chunk+embed memory per request.
+_MAX_DOC_BYTES = 2_000_000
 
 
 def _require_unlocked() -> None:
@@ -188,14 +191,26 @@ async def upload_document(filename: str, request: Request):
     The file bytes are the request body — avoids a multipart dependency. The
     frontend sends the File object directly as the body."""
     _require_unlocked()
-    data = await request.body()
-    if not data:
+    # Enforce the size ceiling WITHOUT buffering an unbounded body first: reject
+    # early on a declared Content-Length, then read the stream with a running cap
+    # so a missing or under-declared length (chunked / spoofed) still can't
+    # balloon memory before the check fires.
+    declared = request.headers.get("content-length")
+    if declared is not None:
+        try:
+            declared_len = int(declared)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid Content-Length")
+        if declared_len > _MAX_DOC_BYTES:
+            raise HTTPException(status_code=413, detail="File too large (max 2 MB)")
+    buf = bytearray()
+    async for chunk in request.stream():
+        buf += chunk
+        if len(buf) > _MAX_DOC_BYTES:
+            raise HTTPException(status_code=413, detail="File too large (max 2 MB)")
+    if not buf:
         raise HTTPException(status_code=400, detail="Empty upload")
-    # 2 MB ceiling mirrors the paste limit — booth docs are small; this blocks
-    # a single request from ballooning memory during encrypt+chunk+embed.
-    if len(data) > 2_000_000:
-        raise HTTPException(status_code=413, detail="File too large (max 2 MB)")
-    return _write_and_ingest(filename, data)
+    return _write_and_ingest(filename, bytes(buf))
 
 
 @router.delete("/api/kb/documents/{filename}")
