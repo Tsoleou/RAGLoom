@@ -227,6 +227,24 @@ def log_query(
 
 # ── Read path (analytics) ───────────────────────────────────────────
 
+# Shown in place of a row's text when it can't be decrypted on read — the KB is
+# locked, or the row was encrypted under a since-replaced key. Read paths must
+# degrade gracefully (the dashboard is reachable while the KB is still locked,
+# e.g. right after boot); a raised KBLocked/InvalidToken here would 500 the
+# whole endpoint instead of just hiding the unreadable text.
+_LOCKED_LABEL = "🔒 (locked)"
+
+
+def _safe_decrypt(value: str) -> str | None:
+    """Decrypt a stored value for display/grouping, or None when it can't be
+    read right now. Plaintext passes straight through (decrypt_text is a no-op
+    without the envelope prefix), so this is safe to call on every row."""
+    try:
+        return kb_crypto.decrypt_text(value)
+    except Exception:  # noqa: BLE001 — locked / wrong-key / corrupt row: unreadable, not fatal
+        return None
+
+
 def _group_questions(queries, limit: int) -> list[dict]:
     """Count near-identical questions (normalized: lowercased + trimmed),
     keeping the first-seen original phrasing as the display representative.
@@ -315,8 +333,11 @@ def fetch_stats(days: int = 7) -> dict:
         # lives in the detail JSON blob.
         mention_counts: dict[str, int] = {}
         for r in cur.execute(f"SELECT detail FROM queries{where}", params).fetchall():
+            detail = _safe_decrypt(r["detail"] or "")
+            if detail is None:
+                continue  # locked / unreadable row — skip rather than 500 the stats
             try:
-                prods = (json.loads(kb_crypto.decrypt_text(r["detail"] or "")) or {}).get("products") or []
+                prods = (json.loads(detail) or {}).get("products") or []
             except (ValueError, TypeError):
                 continue
             for pid in prods:
@@ -337,7 +358,8 @@ def fetch_stats(days: int = 7) -> dict:
             params,
         ).fetchall()
         top_questions = _group_questions(
-            (kb_crypto.decrypt_text(r["query"] or "") for r in tq_rows), limit=15,
+            (t for r in tq_rows if (t := _safe_decrypt(r["query"] or "")) is not None),
+            limit=15,
         )
 
         # Volume per day
@@ -367,7 +389,8 @@ def fetch_stats(days: int = 7) -> dict:
             params,
         ).fetchall()
         knowledge_gaps = _group_gaps(
-            ((kb_crypto.decrypt_text(r["query"] or ""), r["top_score"]) for r in gap_rows),
+            ((t, r["top_score"]) for r in gap_rows
+             if (t := _safe_decrypt(r["query"] or "")) is not None),
             limit=10,
         )
 
@@ -408,7 +431,8 @@ def fetch_recent(limit: int = 50, offset: int = 0) -> list[dict]:
         out = []
         for r in rows:
             d = dict(r)
-            d["query"] = kb_crypto.decrypt_text(d.get("query") or "")  # at-rest decrypt
+            q = _safe_decrypt(d.get("query") or "")
+            d["query"] = _LOCKED_LABEL if q is None else q  # at-rest decrypt; placeholder if unreadable
             d["product"] = display_name(d.get("product"))  # product_id → readable name
             out.append(d)
         return out
@@ -443,7 +467,8 @@ def fetch_all(days: int = 0) -> list[dict]:
         out = []
         for r in rows:
             d = dict(r)
-            d["query"] = kb_crypto.decrypt_text(d.get("query") or "")  # at-rest decrypt
+            q = _safe_decrypt(d.get("query") or "")
+            d["query"] = _LOCKED_LABEL if q is None else q  # at-rest decrypt; placeholder if unreadable
             d["product"] = display_name(d.get("product")) or (d.get("product") or "")
             out.append(d)
         return out
