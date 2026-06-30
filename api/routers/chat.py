@@ -112,18 +112,55 @@ def reingest_file(path: str) -> int:
     stale chunks behind, then runs the normal load→chunk→embed→store path (which
     encrypts the chunk text on write). Builds chat_pipe on demand if chat hasn't
     been initialized yet. Returns the collection's total chunk count after.
+
+    The old chunks are snapshotted before deletion and restored if ingest fails,
+    so a transient ingest error (e.g. the embedder being briefly unreachable)
+    can't leave the document silently missing from retrieval.
     """
     global chat_pipe
     if chat_pipe is None:
         chat_pipe = RAGPipeline(Settings(score_threshold=0.0))
     filename = path.rsplit("/", 1)[-1]
+    collection = chat_pipe.collection
+
+    # Snapshot the file's current chunks (stored form: encrypted docs + vectors +
+    # plaintext metadata) so we can put them back verbatim if ingest fails.
+    snapshot = collection.get(
+        where={"filename": filename},
+        include=["documents", "embeddings", "metadatas"],
+    )
     try:
-        chat_pipe.collection.delete(where={"filename": filename})
+        collection.delete(where={"filename": filename})
     except Exception as e:  # noqa: BLE001 — empty/absent is fine, keep going
         print(f"[Server] reingest_file: delete old chunks for {filename}: {e}")
-    chat_pipe.ingest(path)
+
+    try:
+        chat_pipe.ingest(path)
+    except Exception:
+        # Roll back to the pre-delete state so the document doesn't vanish.
+        _restore_chunks(collection, snapshot)
+        chat_pipe._product_ids = chat_pipe._collect_product_ids()
+        raise
+
     chat_pipe._product_ids = chat_pipe._collect_product_ids()
-    return chat_pipe.collection.count()
+    return collection.count()
+
+
+def _restore_chunks(collection, snapshot) -> None:
+    """Re-add a snapshot taken by collection.get() (the IDs were just deleted, so
+    a strict add() won't collide). No-op when the file had no prior chunks."""
+    ids = snapshot.get("ids") or []
+    if not ids:
+        return
+    try:
+        collection.add(
+            ids=ids,
+            documents=snapshot.get("documents"),
+            embeddings=snapshot.get("embeddings"),
+            metadatas=snapshot.get("metadatas"),
+        )
+    except Exception as e:  # noqa: BLE001 — best-effort rollback; surface, don't mask
+        print(f"[Server] reingest_file: rollback restore failed: {e}")
 
 
 def remove_file_chunks(filename: str) -> int:
