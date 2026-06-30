@@ -345,6 +345,7 @@ def execute_retrieval_judge(inputs: dict, params: dict) -> dict:
     query = inputs.get("query", "") or ""
     candidates = inputs.get("results_in") or []
     model = params.get("model", "gemma3:4b")
+    floor = int(params.get("floor", 3))
     settings = Settings()
 
     kept, verdicts = judge_retrieval(
@@ -352,6 +353,7 @@ def execute_retrieval_judge(inputs: dict, params: dict) -> dict:
         results=candidates,
         model=model,
         base_url=settings.ollama_base_url,
+        floor=floor,
     )
 
     # Serialize verdicts for both downstream nodes and the chat panel.

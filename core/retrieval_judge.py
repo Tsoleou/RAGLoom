@@ -16,6 +16,13 @@ modes pure cosine retrieval can't:
 One LLM call covers all K candidates — output is a JSON verdict list.
 On any LLM / parse error the function degrades to "keep everything" so a
 flaky judge never hides correct chunks.
+
+A small local judge (gemma3:4b) over-prunes: query-log analysis showed it
+wiped *every* chunk on 50% of runs and never once kept all candidates —
+including queries whose top retrieval score was the highest in the table.
+So we enforce a **floor**: at least `min(floor, K)` chunks always survive,
+topped up from the highest-scoring dropped candidates. The judge may reorder
+and trim, but it can never starve generation of context.
 """
 
 from __future__ import annotations
@@ -32,6 +39,10 @@ from core.retrieval_types import RetrievalResult
 
 # Single call, batched. Truncate each chunk to keep prompt small.
 _DEFAULT_PREVIEW_CHARS = 300
+
+# Minimum chunks that must survive the judge (capped at K). Guards against the
+# small judge model over-pruning to zero — see module docstring.
+_DEFAULT_FLOOR = 3
 
 _SYSTEM = (
     "You are a strict retrieval reviewer. You will receive a user question "
@@ -73,6 +84,7 @@ def judge_retrieval(
     model: str = "gemma3:4b",
     base_url: str = "http://localhost:11434",
     max_preview_chars: int = _DEFAULT_PREVIEW_CHARS,
+    floor: int = _DEFAULT_FLOOR,
 ) -> tuple[list[RetrievalResult], list[JudgeVerdict]]:
     """Filter retrieval results via a single batched LLM relevance judge.
 
@@ -81,6 +93,11 @@ def judge_retrieval(
 
     Degrades to "keep everything" on LLM error / parse failure — never silently
     drops chunks just because the judge misfired.
+
+    `floor` guarantees at least `min(floor, K)` chunks survive: if the judge
+    keeps fewer, the highest-scoring dropped candidates are restored until the
+    floor is met. Restored chunks are re-marked keep=true in the verdict trace
+    (with a note) so the trace and the returned results stay consistent.
     """
     candidates = list(results)
     if not candidates or not (query and query.strip()):
@@ -140,7 +157,7 @@ def judge_retrieval(
             by_idx[v["i"]] = v
 
     verdicts: list[JudgeVerdict] = []
-    kept: list[RetrievalResult] = []
+    keep_flags: list[bool] = []
     for i, r in enumerate(candidates):
         v = by_idx.get(i)
         keep = bool(v.get("keep", True)) if v else True
@@ -154,9 +171,35 @@ def judge_retrieval(
                 score=r.score,
             )
         )
-        if keep:
-            kept.append(r)
+        keep_flags.append(keep)
+
+    kept_idx = [i for i, k in enumerate(keep_flags) if k]
+
+    # Floor: the small judge over-prunes (sometimes to zero), so guarantee a
+    # minimum of context by restoring the highest-scoring dropped candidates.
+    floor = max(0, min(floor, len(candidates)))
+    restored = 0
+    if len(kept_idx) < floor:
+        dropped_by_score = sorted(
+            (i for i, k in enumerate(keep_flags) if not k),
+            key=lambda i: candidates[i].score,
+            reverse=True,
+        )
+        for i in dropped_by_score:
+            if len(kept_idx) >= floor:
+                break
+            kept_idx.append(i)
+            # Keep the trace honest: the chunk IS returned, so flip its verdict
+            # to keep=true and note the judge's original drop.
+            judged = verdicts[i].reason
+            verdicts[i].keep = True
+            verdicts[i].reason = f"restored by floor (top-{floor}); judge dropped: {judged}"
+            restored += 1
+        kept_idx.sort()  # restore retrieval (score) order
+
+    kept = [candidates[i] for i in kept_idx]
 
     dropped = len(candidates) - len(kept)
-    print(f"[RetrievalJudge] kept {len(kept)}/{len(candidates)} chunks ({dropped} dropped)")
+    floor_note = f", {restored} restored by floor" if restored else ""
+    print(f"[RetrievalJudge] kept {len(kept)}/{len(candidates)} chunks ({dropped} dropped{floor_note})")
     return kept, verdicts
