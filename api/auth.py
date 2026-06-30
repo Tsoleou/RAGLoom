@@ -56,22 +56,28 @@ def check_admin_auth(headers) -> bool:
     放行條件（任一）：
       - Basic Auth 密碼與 RAG_ADMIN_PASSWORD 相符（操作者瀏覽器跳窗輸入，
         之後同源請求/WS 會自動帶上）。
+      - Basic Auth 密碼是「已解鎖的」KB unlock passphrase —— 啟用加密但沒另設
+        RAG_ADMIN_PASSWORD 時，passphrase 就是 admin 憑證（避免加密部署的 admin
+        面在無密碼下對整個 LAN 敞開）。
       - 帶對的 X-Local-Token（dev vite proxy / curl，行為不變）。
-    未設 RAG_ADMIN_PASSWORD → 不擋（向後相容），交還給呼叫端的其他判斷。
+    既沒設 RAG_ADMIN_PASSWORD、也沒啟用加密 → 不擋（向後相容的純明文部署，
+    隔離仍靠瀏覽器 kiosk 鎖定）。
     """
     admin_pw = _settings.api_admin_password
-    if not admin_pw:
+    # 沒有任何可驗的憑證來源（無 admin 密碼、未啟用加密）→ 維持舊的純明文行為。
+    if not admin_pw and not kb_crypto.is_enabled():
         return True
     auth = headers.get("authorization", "")
     if auth.startswith("Basic "):
         try:
             decoded = base64.b64decode(auth[6:]).decode("utf-8", "replace")
             _, _, pw = decoded.partition(":")
-            if secrets.compare_digest(pw, admin_pw):
+            if admin_pw and secrets.compare_digest(pw, admin_pw):
                 return True
             # Unify login + unlock: after the operator has unlocked the KB, the
             # same passphrase satisfies admin Basic Auth, so one secret covers
-            # both the encryption key and the /admin gate.
+            # both the encryption key and the /admin gate. Only matches once
+            # unlocked (verify_passphrase compares the in-memory passphrase).
             if kb_crypto.verify_passphrase(pw):
                 return True
         except (ValueError, TypeError):
@@ -138,9 +144,10 @@ class LocalTokenMiddleware(BaseHTTPMiddleware):
         if not request.url.path.startswith("/api/"):
             return await call_next(request)
 
-        # 管理類端點：設了 admin 密碼就需要憑證，且不吃 same-origin 放行
-        # （否則同源訪客脫離 kiosk 也能打）。訪客 kiosk 端點不受影響。
-        if _settings.api_admin_password and not is_kiosk_api(
+        # 管理類端點：設了 admin 密碼、或啟用了 KB 加密（此時解鎖 passphrase 即
+        # admin 憑證）就需要憑證，且不吃 same-origin 放行（否則同源訪客脫離 kiosk
+        # 也能打到 dashboard 的明文提問與 KB 增刪）。訪客 kiosk 端點不受影響。
+        if (_settings.api_admin_password or kb_crypto.is_enabled()) and not is_kiosk_api(
             request.method, request.url.path
         ):
             if not check_admin_auth(request.headers):

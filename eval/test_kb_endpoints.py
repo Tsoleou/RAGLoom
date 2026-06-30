@@ -59,3 +59,50 @@ def test_endpoints_lock_unlock_and_guards(crypto, tmp_path, monkeypatch):
     crypto.lock()
     assert crypto.unlock("operator-pass") is False
     assert crypto.unlock("brand-new-pass") is True
+
+
+def test_encryption_gates_admin_surface_without_admin_password(crypto, monkeypatch):
+    """S1: with encryption enabled but no RAG_ADMIN_PASSWORD set, the admin HTTP
+    surface must NOT fall through to same-origin — an uncredentialed LAN request
+    (TestClient sends no Origin, so is_same_origin() is True, exactly the LAN
+    case) has to be rejected, while the unlock passphrase authenticates."""
+    import base64
+
+    crypto.init_keystore("operator-pass")
+    crypto.lock()  # boot: enabled but locked
+
+    import api.auth as auth
+    import api.routers.kb as kb_router
+    importlib.reload(kb_router)  # rebind router to the reloaded crypto module
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    saved = (auth._settings.api_admin_password, auth._settings.api_local_token)
+    auth._settings.api_admin_password = ""   # the vulnerable config: no admin password
+    auth._settings.api_local_token = ""
+    try:
+        app = FastAPI()
+        app.add_middleware(auth.LocalTokenMiddleware)
+        app.include_router(kb_router.router)
+        client = TestClient(app)
+
+        # kiosk endpoint stays open so the UnlockGate can boot
+        assert client.get("/api/kb/status").status_code == 200
+
+        # admin endpoint, uncredentialed same-origin → 401 (the S1 hole, closed).
+        # Must be rejected at the auth layer, BEFORE the 423 lock gate.
+        assert client.post("/api/kb/lock").status_code == 401
+
+        # right passphrase but still locked → can't be verified yet → 401
+        basic = base64.b64encode(b":operator-pass").decode()
+        assert client.post("/api/kb/lock", headers={"Authorization": f"Basic {basic}"}).status_code == 401
+
+        # once unlocked, the passphrase doubles as the admin Basic-Auth credential
+        crypto.unlock("operator-pass")
+        assert client.post("/api/kb/lock", headers={"Authorization": f"Basic {basic}"}).status_code == 200
+        # wrong passphrase is still rejected
+        crypto.unlock("operator-pass")
+        bad = base64.b64encode(b":wrong-pass").decode()
+        assert client.post("/api/kb/lock", headers={"Authorization": f"Basic {bad}"}).status_code == 401
+    finally:
+        auth._settings.api_admin_password, auth._settings.api_local_token = saved

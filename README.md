@@ -237,6 +237,8 @@ RAG_ADMIN_PASSWORD=your-strong-password
 
 Leave it unset to fall back to kiosk-lockdown only. **Auth model:** served pages call `/api/*` same-origin, so the API allows same-origin requests without the `X-Local-Token` header (cross-origin browser requests are still rejected); visitor↔operator isolation otherwise relies on **locking the kiosk browser to `/`**. This is a single-machine, non-public deployment.
 
+> **With KB encryption enabled, the admin API is gated even without `RAG_ADMIN_PASSWORD`.** Because the dashboard returns decrypted visitor questions and the KB endpoints can inject/lock the store, an encrypted booth no longer trusts same-origin alone: admin-class endpoints require a credential, and the **unlock passphrase doubles as that credential** (accepted once the KB is unlocked). The operator therefore sees a browser Basic-Auth prompt for the passphrase in addition to the on-page unlock screen — the same double-entry the `RAG_ADMIN_PASSWORD` path already has. The unauthenticated visitor endpoints and the `/api/kb/status` + `/api/kb/unlock` bootstrap endpoints stay open. (The editor `ws/execute` WebSocket keeps its documented same-origin allowance, since browsers don't reliably send cached Basic credentials on a WS handshake.)
+
 ### Kiosk browser lockdown
 
 Point a kiosk/full-screen browser at the visitor URL so visitors can't reach `/admin`:
