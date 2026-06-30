@@ -42,6 +42,17 @@ def test_text_round_trip_and_envelope(crypto):
     assert crypto.decrypt_text(token) == "機密：型號 SW-9000"
 
 
+def test_cipher_rebuilt_on_reunlock_decrypts_old_ciphertext(crypto):
+    # The Fernet cipher is cached per unlock; locking clears it and a re-unlock
+    # rebuilds it from the same master key, so ciphertext from before the lock
+    # must still decrypt (guards the cached-cipher optimization).
+    crypto.init_keystore("correct horse battery")
+    token = crypto.encrypt_text("機密：型號 SW-9000")
+    crypto.lock()
+    assert crypto.unlock("correct horse battery") is True
+    assert crypto.decrypt_text(token) == "機密：型號 SW-9000"
+
+
 def test_legacy_plaintext_passes_through_decrypt(crypto):
     crypto.init_keystore("pw-pw-pw-pw")
     # A value without the envelope prefix (pre-encryption row) is returned as-is.

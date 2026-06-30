@@ -55,7 +55,9 @@ def _safe_kb_path(filename: str) -> Path:
 
     Rejects path separators, dotfiles, unknown extensions, and anything that
     resolves outside knowledge_base/."""
-    if not _SAFE_NAME.match(filename) or "/" in filename or "\\" in filename:
+    # fullmatch (not match) so the char-class — which already excludes / and \ —
+    # is authoritative end to end, with no trailing-newline escape via `$`.
+    if not _SAFE_NAME.fullmatch(filename):
         raise HTTPException(status_code=400, detail="Invalid filename")
     ext = Path(filename).suffix.lower()
     if ext not in SUPPORTED_EXTENSIONS:
@@ -146,12 +148,16 @@ def _list_documents() -> list[dict]:
             continue
         if f.suffix.lower() not in SUPPORTED_EXTENSIONS:
             continue
-        raw = f.read_bytes()
+        # Size comes from stat(); the encrypted flag only needs the envelope
+        # prefix — so read a few header bytes instead of the whole file (which
+        # could be a multi-MB PDF) on every listing.
+        with f.open("rb") as fh:
+            head = fh.read(8)
         out.append({
             "filename": f.name,
             "type": f.suffix.lstrip(".").lower(),
-            "bytes": len(raw),
-            "encrypted": kb_crypto.is_encrypted_bytes(raw),
+            "bytes": f.stat().st_size,
+            "encrypted": kb_crypto.is_encrypted_bytes(head),
         })
     return out
 
