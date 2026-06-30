@@ -606,6 +606,8 @@ def execute_generator(inputs: dict, params: dict) -> dict:
         # editor path injects nothing and stays single-shot.
         messages=inputs.get("messages") or [],
         base_url=settings.ollama_base_url,
+        num_ctx=int(params.get("num_ctx", 8192)),
+        history_limit=int(params.get("history_limit", 12)),
     )
 
     if isinstance(format_type, dict):

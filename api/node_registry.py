@@ -537,6 +537,8 @@ _register(NodeType(
     params=[
         ParamDef("model", "Model", "string", "gemma3:4b"),
         ParamDef("format_type", "Format Override", "select", "", options=["", "json"]),
+        ParamDef("num_ctx", "Context Window (tokens)", "number", 8192),
+        ParamDef("history_limit", "Max History Messages", "number", 12),
     ],
 ))
 
