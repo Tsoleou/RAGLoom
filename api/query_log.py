@@ -49,6 +49,7 @@ CREATE TABLE IF NOT EXISTS queries (
     rerank_total  INTEGER,
     critic_verdict TEXT,
     critic_revised INTEGER,
+    critic_reason TEXT,                       -- why the critic passed/failed (encrypted at rest)
     detail        TEXT                       -- raw retrieval/guards JSON for drill-down
 );
 CREATE INDEX IF NOT EXISTS idx_queries_ts ON queries(ts);
@@ -57,7 +58,10 @@ CREATE INDEX IF NOT EXISTS idx_queries_intent ON queries(intent);
 
 # Columns added after the first release — applied to pre-existing DBs on connect.
 # (kept out of _SCHEMA so the index below runs only after the column exists.)
-_MIGRATIONS = [("product", "ALTER TABLE queries ADD COLUMN product TEXT")]
+_MIGRATIONS = [
+    ("product", "ALTER TABLE queries ADD COLUMN product TEXT"),
+    ("critic_reason", "ALTER TABLE queries ADD COLUMN critic_reason TEXT"),
+]
 
 
 def _connect() -> sqlite3.Connection:
@@ -205,6 +209,9 @@ def log_query(
             rerank.get("total") if rerank else None,
             critique.get("verdict") if critique else None,
             (1 if critique.get("revised") else 0) if critique else None,
+            # Free text that can echo answer/source content → encrypt at rest like
+            # `query`/`detail`. None when no critic ran or it gave no reason.
+            kb_crypto.encrypt_text(critique["reason"]) if critique and critique.get("reason") else None,
             kb_crypto.encrypt_text(detail),
         )
         conn = _connect()
@@ -214,8 +221,8 @@ def log_query(
                    (ts, query, profile, model, latency_ms, status, blocked,
                     blocked_reason, gate, intent, product, top_score, avg_score,
                     n_retrieved, n_passed, top_source, rerank_kept, rerank_total,
-                    critic_verdict, critic_revised, detail)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    critic_verdict, critic_revised, critic_reason, detail)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 row,
             )
             conn.commit()
@@ -430,7 +437,8 @@ def fetch_recent(limit: int = 50, offset: int = 0) -> list[dict]:
     try:
         rows = conn.execute(
             """SELECT id, ts, query, profile, model, latency_ms, status, blocked,
-                      blocked_reason, gate, intent, product, top_score, n_retrieved, n_passed
+                      blocked_reason, gate, intent, product, top_score, n_retrieved,
+                      n_passed, critic_verdict, critic_reason
                FROM queries ORDER BY id DESC LIMIT ? OFFSET ?""",
             (int(limit), int(offset)),
         ).fetchall()
@@ -440,6 +448,9 @@ def fetch_recent(limit: int = 50, offset: int = 0) -> list[dict]:
             q = _safe_decrypt(d.get("query") or "")
             d["query"] = _LOCKED_LABEL if q is None else q  # at-rest decrypt; placeholder if unreadable
             d["product"] = display_name(d.get("product"))  # product_id → readable name
+            if d.get("critic_reason"):  # encrypted free text → decrypt for the history view
+                cr = _safe_decrypt(d["critic_reason"])
+                d["critic_reason"] = _LOCKED_LABEL if cr is None else cr
             out.append(d)
         return out
     finally:
@@ -452,7 +463,7 @@ EXPORT_COLUMNS = [
     "id", "ts", "query", "profile", "model", "intent", "product",
     "status", "blocked", "blocked_reason", "gate",
     "top_score", "n_retrieved", "n_passed", "top_source",
-    "rerank_kept", "rerank_total", "critic_verdict", "latency_ms",
+    "rerank_kept", "rerank_total", "critic_verdict", "critic_reason", "latency_ms",
 ]
 
 
@@ -476,6 +487,9 @@ def fetch_all(days: int = 0) -> list[dict]:
             q = _safe_decrypt(d.get("query") or "")
             d["query"] = _LOCKED_LABEL if q is None else q  # at-rest decrypt; placeholder if unreadable
             d["product"] = display_name(d.get("product")) or (d.get("product") or "")
+            if d.get("critic_reason"):  # encrypted free text → decrypt for the audit export
+                cr = _safe_decrypt(d["critic_reason"])
+                d["critic_reason"] = _LOCKED_LABEL if cr is None else cr
             out.append(d)
         return out
     finally:
