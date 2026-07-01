@@ -19,6 +19,13 @@ interface ChatMessage {
    *  render a retry affordance that re-sends `retryText`. */
   error?: boolean;
   retryText?: string;
+  /** Images of the products this reply names, resolved server-side. */
+  productImages?: ProductImage[];
+}
+
+interface ProductImage {
+  product_id: string;
+  url: string;
 }
 
 interface RetrievalRow {
@@ -70,6 +77,7 @@ interface QueryResponse {
   guards?: GuardRow[];
   rerank?: RerankTrace | null;
   critique?: CritiqueRow | null;
+  product_images?: ProductImage[];
 }
 
 // Chat now executes the active profile's full graph; we just need the names.
@@ -129,6 +137,8 @@ export function ChatView({ admin = true }: { admin?: boolean } = {}) {
   const [threshold, setThreshold] = useState<number | null>(null);
   const [topK, setTopK] = useState<number | null>(null);
   const [showRetrieval, setShowRetrieval] = useState(false);
+  // URL of a product image opened full-screen (click a thumbnail to enlarge).
+  const [zoomedImage, setZoomedImage] = useState<string | null>(null);
   const [profiles, setProfiles] = useState<ProfileMap>({ default: {} });
   const [activeProfile, setActiveProfile] = useState<string>("default");
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -260,7 +270,13 @@ export function ChatView({ admin = true }: { admin?: boolean } = {}) {
 
         setMessages((m) => [
           ...m,
-          { role: "assistant", content: replyContent, blocked: data.blocked, emotion },
+          {
+            role: "assistant",
+            content: replyContent,
+            blocked: data.blocked,
+            emotion,
+            productImages: data.product_images,
+          },
         ]);
         setRetrieval(data.retrieval || []);
         setGuards(data.guards || []);
@@ -591,6 +607,29 @@ export function ChatView({ admin = true }: { admin?: boolean } = {}) {
                       </div>
                     )}
                     {m.content}
+                    {m.productImages && m.productImages.length > 0 && (
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {m.productImages.map((img) => (
+                          <button
+                            key={img.product_id}
+                            type="button"
+                            onClick={() => setZoomedImage(img.url)}
+                            className="rounded-md border border-[#1a3540] transition-shadow hover:border-[#00ccaa]/60 hover:shadow-[0_0_14px_rgba(0,204,170,0.2)] cursor-zoom-in"
+                          >
+                            <img
+                              src={img.url}
+                              alt={img.product_id}
+                              loading="lazy"
+                              onError={(e) => {
+                                const btn = e.currentTarget.parentElement;
+                                if (btn) btn.style.display = "none";
+                              }}
+                              className="h-28 w-auto rounded-md object-contain"
+                            />
+                          </button>
+                        ))}
+                      </div>
+                    )}
                     {m.error && m.retryText && (
                       <button
                         onClick={() => handleSendText(m.retryText!)}
@@ -847,6 +886,42 @@ export function ChatView({ admin = true }: { admin?: boolean } = {}) {
           </div>
         )}
       </section>
+
+      {/* Full-screen product-image viewer. Click anywhere (or Esc-less tap on
+          mobile) to dismiss; the image itself stops propagation so tapping it
+          doesn't close. */}
+      <AnimatePresence>
+        {zoomedImage && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.15 }}
+            onClick={() => setZoomedImage(null)}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-6 cursor-zoom-out backdrop-blur-sm"
+          >
+            <motion.img
+              key={zoomedImage}
+              src={zoomedImage}
+              alt="product"
+              initial={{ scale: 0.9 }}
+              animate={{ scale: 1 }}
+              exit={{ scale: 0.9 }}
+              transition={{ duration: 0.15, ease: "easeOut" }}
+              onClick={(e) => e.stopPropagation()}
+              className="max-h-full max-w-full rounded-lg border border-[#1a3540] object-contain shadow-2xl cursor-default"
+            />
+            <button
+              type="button"
+              onClick={() => setZoomedImage(null)}
+              aria-label="Close"
+              className="absolute right-5 top-5 flex h-9 w-9 items-center justify-center rounded-full bg-[#0a1a1f]/80 text-[#d0e8e0] border border-[#1a3540] transition-colors hover:bg-[#00ccaa]/20"
+            >
+              <X size={18} />
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

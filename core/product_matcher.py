@@ -17,7 +17,7 @@ Behavior:
 
 import re
 from functools import lru_cache
-from typing import Iterable, Mapping, Optional
+from typing import Iterable, List, Mapping, Optional
 
 
 _COMPARISON_RE = re.compile(
@@ -106,3 +106,39 @@ def detect_product_filter(
         return None
 
     return deduped[0]
+
+
+def find_products_in_text(
+    text: str,
+    product_ids: Iterable[str],
+    aliases: Optional[Mapping[str, list[str]]] = None,
+) -> List[str]:
+    """Return every product_id whose name appears in `text`.
+
+    Unlike detect_product_filter (which routes a *query* to a single product
+    and bails on comparison phrasing), this scans an arbitrary text — typically
+    a generated reply — and returns *all* products named in it, so the caller
+    can attach one image per product an answer actually talks about. Reuses the
+    same alias normalization + word-boundary patterns + prefix dedup, so
+    Chinese aliases and 'VisionBook 17' spacing variants match identically.
+
+    Result order follows the given product_ids for determinism.
+    """
+    if not text or not text.strip():
+        return []
+
+    text = _normalize_aliases(text, aliases if aliases is not None else DEFAULT_BRAND_ALIASES)
+
+    matches = [pid for pid in product_ids if _build_pattern(pid).search(text)]
+    if not matches:
+        return []
+
+    keep = set(_drop_prefix_redundant(matches))
+    # Preserve caller order; _drop_prefix_redundant sorts by length internally.
+    seen: set[str] = set()
+    ordered: List[str] = []
+    for pid in product_ids:
+        if pid in keep and pid not in seen:
+            seen.add(pid)
+            ordered.append(pid)
+    return ordered

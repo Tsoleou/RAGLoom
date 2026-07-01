@@ -8,8 +8,16 @@ No FastAPI / app state here — the chat router owns the pipeline singleton.
 """
 
 import json
+from pathlib import Path
 
 from config.settings import Settings
+from core.product_matcher import find_products_in_text
+
+# Product images live beside the product docs and are served at /product_images
+# (see api/server.py). Same <product_id>.png convention as the static mount, so a
+# matched product_id maps directly to both the on-disk file and the public URL.
+_PRODUCT_IMAGES_DIR = Path("knowledge_base/product_images")
+_PRODUCT_IMAGES_URL = "/product_images"
 
 # Ingest-side node types skipped when running a chat query — chat ingestion
 # goes through /api/chat/ingest, not the graph.
@@ -186,6 +194,13 @@ def _extract_chat_response(
             pass
         break
 
+    # Product images: one per product the *reply* actually names. Bounded by the
+    # product_ids that were retrieved so a hallucinated name (gemma3:4b is prone
+    # to inventing products) can't resolve to a real image, and gated on the PNG
+    # existing on disk so a not-yet-photographed product just shows no image.
+    # Skipped entirely on blocked answers — a refusal has no product to show.
+    product_images = _resolve_product_images(reply_text, retrieval_rows) if not blocked else []
+
     guards = _build_guards_trace(nodes, results)
 
     # Critique: the critic stores a JSON-encoded preview line with {__critic, verdict, reason, revised, grounded}
@@ -221,4 +236,20 @@ def _extract_chat_response(
         "guards": guards,
         "rerank": rerank,
         "critique": critique,
+        "product_images": product_images,
     }
+
+
+def _resolve_product_images(reply_text: str, retrieval_rows: list[dict]) -> list[dict]:
+    """Map a reply to the images of the products it names (see call site)."""
+    retrieved_ids = [
+        pid for pid in dict.fromkeys(r.get("product_id") for r in retrieval_rows) if pid
+    ]
+    if not retrieved_ids:
+        return []
+    named = find_products_in_text(reply_text, retrieved_ids)
+    images: list[dict] = []
+    for pid in named:
+        if (_PRODUCT_IMAGES_DIR / f"{pid}.png").is_file():
+            images.append({"product_id": pid, "url": f"{_PRODUCT_IMAGES_URL}/{pid}.png"})
+    return images
