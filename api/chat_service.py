@@ -9,6 +9,7 @@ No FastAPI / app state here — the chat router owns the pipeline singleton.
 
 import json
 from pathlib import Path
+from typing import Iterable, Optional
 
 from config.settings import Settings
 from core.product_matcher import find_products_in_text
@@ -118,6 +119,7 @@ def _extract_chat_response(
     results: dict[str, dict],
     outputs: dict[str, dict],
     settings: Settings,
+    catalog_ids: Optional[Iterable[str]] = None,
 ) -> dict:
     """Pull reply / retrieval / guards / critique out of the engine result set."""
     reply_text = ""
@@ -194,12 +196,15 @@ def _extract_chat_response(
             pass
         break
 
-    # Product images: one per product the *reply* actually names. Bounded by the
-    # product_ids that were retrieved so a hallucinated name (gemma3:4b is prone
-    # to inventing products) can't resolve to a real image, and gated on the PNG
-    # existing on disk so a not-yet-photographed product just shows no image.
-    # Skipped entirely on blocked answers — a refusal has no product to show.
-    product_images = _resolve_product_images(reply_text, retrieval_rows) if not blocked else []
+    # Product images: one per product the *reply* actually names. Matched against
+    # the full catalog so a specific model isn't mis-attributed to its bare stem,
+    # then bounded to the product_ids that were retrieved so a hallucinated name
+    # (gemma3:4b is prone to inventing products) can't resolve to a real image,
+    # and gated on the PNG existing on disk so a not-yet-photographed product just
+    # shows no image. Skipped on blocked answers — a refusal has no product.
+    product_images = (
+        _resolve_product_images(reply_text, retrieval_rows, catalog_ids) if not blocked else []
+    )
 
     guards = _build_guards_trace(nodes, results)
 
@@ -240,16 +245,31 @@ def _extract_chat_response(
     }
 
 
-def _resolve_product_images(reply_text: str, retrieval_rows: list[dict]) -> list[dict]:
-    """Map a reply to the images of the products it names (see call site)."""
+def _resolve_product_images(
+    reply_text: str,
+    retrieval_rows: list[dict],
+    catalog_ids: Optional[Iterable[str]] = None,
+) -> list[dict]:
+    """Map a reply to the images of the products it names (see call site).
+
+    Names are matched against the *full catalog* (catalog_ids ∪ retrieved) when a
+    catalog is supplied, so a specific model ('VisionBook Studio') isn't
+    mis-attributed to its bare-stem product ('visionbook'). The result is then
+    bounded to the retrieved ids (hallucination guard) and to PNGs on disk.
+    Retrieval order is the display order — ranked and deterministic even though
+    the match pool is a set. Without a catalog it degrades to retrieved-only.
+    """
     retrieved_ids = [
         pid for pid in dict.fromkeys(r.get("product_id") for r in retrieval_rows) if pid
     ]
     if not retrieved_ids:
         return []
-    named = find_products_in_text(reply_text, retrieved_ids)
+    match_pool = set(retrieved_ids)
+    if catalog_ids:
+        match_pool |= set(catalog_ids)
+    named = set(find_products_in_text(reply_text, match_pool))
     images: list[dict] = []
-    for pid in named:
-        if (_PRODUCT_IMAGES_DIR / f"{pid}.png").is_file():
+    for pid in retrieved_ids:
+        if pid in named and (_PRODUCT_IMAGES_DIR / f"{pid}.png").is_file():
             images.append({"product_id": pid, "url": f"{_PRODUCT_IMAGES_URL}/{pid}.png"})
     return images
