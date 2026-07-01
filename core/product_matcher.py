@@ -17,7 +17,7 @@ Behavior:
 
 import re
 from functools import lru_cache
-from typing import Iterable, Mapping, Optional
+from typing import Iterable, List, Mapping, Optional
 
 
 _COMPARISON_RE = re.compile(
@@ -40,9 +40,14 @@ DEFAULT_BRAND_ALIASES: dict[str, list[str]] = {
 
 
 def _normalize_aliases(query: str, aliases: Mapping[str, list[str]]) -> str:
-    """Replace each alias in the query with its canonical English stem."""
+    """Replace each alias in the query with its canonical English stem.
+
+    Longest alias first, so a shorter alias that is a prefix of a longer one
+    ('諾瓦' vs '諾瓦帕') doesn't clobber the longer match mid-string and leave a
+    stray char that breaks the product pattern.
+    """
     for canonical, alts in aliases.items():
-        for alt in alts:
+        for alt in sorted(alts, key=len, reverse=True):
             if alt and alt in query:
                 query = query.replace(alt, canonical)
     return query
@@ -106,3 +111,67 @@ def detect_product_filter(
         return None
 
     return deduped[0]
+
+
+def find_products_in_text(
+    text: str,
+    product_ids: Iterable[str],
+    aliases: Optional[Mapping[str, list[str]]] = None,
+) -> List[str]:
+    """Return every product_id whose name appears in `text`.
+
+    Unlike detect_product_filter (which routes a *query* to a single product
+    and bails on comparison phrasing), this scans an arbitrary text — typically
+    a generated reply — and returns *all* products named in it, so the caller
+    can attach one image per product an answer actually talks about. Reuses the
+    same alias normalization + word-boundary patterns, so Chinese aliases and
+    'VisionBook 17' spacing variants match identically.
+
+    Prefix dedup is *span-aware* here, not length-based like detect_product_filter:
+    a bare stem ('visionbook', itself a real product) is dropped only when every
+    one of its match spans sits inside a longer model's span — i.e. it only ever
+    appeared as the prefix of 'visionbook 17', never on its own. A base product
+    genuinely named alongside its submodel is kept; a submodel name is never
+    mis-attributed to the base stem.
+
+    Result order follows the given product_ids for determinism.
+    """
+    if not text or not text.strip():
+        return []
+
+    product_ids = list(product_ids)  # consumed twice below; never trust an iterator
+    text = _normalize_aliases(text, aliases if aliases is not None else DEFAULT_BRAND_ALIASES)
+
+    # All match spans per id (finditer, so a standalone bare-stem mention is
+    # distinguishable from one that is only the prefix of a longer model name).
+    spans: dict[str, list[tuple[int, int]]] = {}
+    for pid in product_ids:
+        found = [m.span() for m in _build_pattern(pid).finditer(text)]
+        if found:
+            spans[pid] = found
+    if not spans:
+        return []
+
+    keep: set[str] = set()
+    for pid, my_spans in spans.items():
+        # Keep pid if any of its spans is NOT contained in a strictly-longer
+        # matched id's span (unrelated stems can't overlap, so containment alone
+        # is the precise "this was just a prefix" test — no startswith needed).
+        for s, e in my_spans:
+            covered = any(
+                ls <= s and e <= le
+                for longer, l_spans in spans.items()
+                if len(longer) > len(pid)
+                for ls, le in l_spans
+            )
+            if not covered:
+                keep.add(pid)
+                break
+
+    seen: set[str] = set()
+    ordered: List[str] = []
+    for pid in product_ids:
+        if pid in keep and pid not in seen:
+            seen.add(pid)
+            ordered.append(pid)
+    return ordered

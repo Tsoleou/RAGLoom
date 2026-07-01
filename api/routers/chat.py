@@ -280,7 +280,9 @@ def chat_query(req: ChatQueryRequest):
             if isinstance(df_stage, int):
                 session.stage = df_stage
 
-    response = _extract_chat_response(nodes, results, outputs, settings)
+    response = _extract_chat_response(
+        nodes, results, outputs, settings, catalog_ids=chat_pipe._product_ids
+    )
 
     # A node-level failure (e.g. Ollama 500 in the generator) is caught *inside*
     # execute_graph — it marks that node status="error" and breaks, but does NOT
