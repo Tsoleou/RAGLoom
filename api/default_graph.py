@@ -7,11 +7,6 @@ duplicating in the frontend) means Editor and Chat can never drift on retriever
 params, anchor lists, edge wiring, etc.
 """
 
-import json
-
-from core.product_matcher import DEFAULT_BRAND_ALIASES
-
-
 def _default_chat_graph() -> dict:
     """Server-side single source of truth for the default pipeline graph.
 
@@ -84,10 +79,10 @@ def _default_chat_graph() -> dict:
     # ── Auxiliary row ───────────────────────────────────────────────
     nodes.extend([
         {"id": "pselector",  "type": "product_selector", "position": {"x": QO + GAP_X * 2, "y": Y_AUX},
-         "params": {"mode": "rule", "model": "gemma3:4b",
-                    # Single source of truth — an inline copy here once drifted
-                    # from core (the '流明'/lumens false-match, P5).
-                    "aliases": json.dumps(DEFAULT_BRAND_ALIASES, ensure_ascii=False, indent=2)}},
+         # aliases deliberately empty: empty = read the operator-editable
+         # _reference/product_aliases.json at query time. Baking a copy into
+         # the graph is how the '流明'/lumens false-match (P5) lingered.
+         "params": {"mode": "rule", "model": "gemma3:4b", "aliases": ""}},
         {"id": "refloader",  "type": "reference_loader", "position": {"x": QO + GAP_X * 5, "y": Y_AUX},
          "params": {"source_path": "./knowledge_base/_reference"}},
         {"id": "sysprompt",  "type": "system_prompt",    "position": {"x": QO + GAP_X * 7, "y": Y_AUX},

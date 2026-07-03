@@ -15,9 +15,16 @@ Behavior:
 - Otherwise                           → the most specific matched product_id
 """
 
+import json
+import logging
 import re
 from functools import lru_cache
-from typing import Iterable, List, Mapping, Optional
+from pathlib import Path
+from typing import Iterable, List, Mapping, Optional, Tuple
+
+from core import kb_crypto
+
+logger = logging.getLogger(__name__)
 
 
 _COMPARISON_RE = re.compile(
@@ -53,6 +60,63 @@ BRAND_DISPLAY: dict[str, str] = {
     "titanbook":  "TitanBook",
     "luminos":    "Luminos",
 }
+
+
+# Operator-editable brand-name metadata, kept beside the reference CSV the
+# operator already edits when adding a product. Deliberately a .json file:
+# load_reference_text() only reads .txt/.md/.csv/.pdf and load_directory()
+# never descends into _reference/, so this file can NEVER leak into the LLM
+# prompt or the vector store — it is code-side matching metadata only.
+DEFAULT_ALIASES_PATH = Path("knowledge_base/_reference/product_aliases.json")
+
+# (path, mtime_ns) → parsed tables. mtime-based so an operator editing the
+# file on a running kiosk takes effect on the next query, no restart.
+_names_cache: dict = {"key": None, "aliases": None, "display": None}
+
+
+def load_brand_names(
+    path: Optional[Path] = None,
+) -> Tuple[Mapping[str, list[str]], Mapping[str, str]]:
+    """Load (aliases, display) brand tables from the operator-editable file.
+
+    File schema: {"<stem>": {"display": "StarForge", "aliases": ["星鋒", ...]}}
+    where <stem> must be the leading token of its product_ids. Falls back to
+    the in-code DEFAULT_BRAND_ALIASES / BRAND_DISPLAY when the file is missing
+    or unreadable — a broken JSON must degrade matching, never crash a chat
+    turn. Reads through kb_crypto so an at-rest-encrypted KB still works.
+    """
+    p = Path(path) if path is not None else DEFAULT_ALIASES_PATH
+    try:
+        key = (str(p), p.stat().st_mtime_ns)
+    except OSError:
+        key = (str(p), None)  # missing file: cache the fallback until it appears
+
+    if _names_cache["key"] == key:
+        return _names_cache["aliases"], _names_cache["display"]
+
+    aliases: Mapping[str, list[str]] = DEFAULT_BRAND_ALIASES
+    display: Mapping[str, str] = BRAND_DISPLAY
+    if key[1] is not None:
+        try:
+            raw = json.loads(kb_crypto.decrypt_bytes(p.read_bytes()).decode("utf-8"))
+            parsed_aliases: dict[str, list[str]] = {}
+            parsed_display: dict[str, str] = {}
+            for stem, entry in raw.items():
+                alts = (entry or {}).get("aliases")
+                if not isinstance(alts, list) or not all(isinstance(a, str) for a in alts):
+                    logger.warning("Skipping brand %r in %s: bad aliases entry", stem, p)
+                    continue
+                parsed_aliases[stem] = alts
+                parsed_display[stem] = str(entry.get("display") or stem.capitalize())
+            aliases, display = parsed_aliases, parsed_display
+        except Exception as e:
+            logger.warning(
+                "Failed to load brand names from %s (%s) — falling back to built-in table",
+                p, e,
+            )
+
+    _names_cache.update(key=key, aliases=aliases, display=display)
+    return aliases, display
 
 
 def _normalize_aliases(query: str, aliases: Mapping[str, list[str]]) -> str:
@@ -116,7 +180,7 @@ def detect_product_filter(
     if _COMPARISON_RE.search(query):
         return None
 
-    query = _normalize_aliases(query, aliases if aliases is not None else DEFAULT_BRAND_ALIASES)
+    query = _normalize_aliases(query, aliases if aliases is not None else load_brand_names()[0])
 
     matches = [pid for pid in product_ids if _build_pattern(pid).search(query)]
     if not matches:
@@ -151,8 +215,9 @@ def restore_english_names(
     """
     if not text:
         return text
-    alias_map = aliases if aliases is not None else DEFAULT_BRAND_ALIASES
-    display_map = display if display is not None else BRAND_DISPLAY
+    file_aliases, file_display = load_brand_names()
+    alias_map = aliases if aliases is not None else file_aliases
+    display_map = display if display is not None else file_display
 
     pairs = [
         (alt, canonical)
@@ -246,7 +311,7 @@ def find_products_in_text(
         return []
 
     product_ids = list(product_ids)  # consumed twice below; never trust an iterator
-    text = _normalize_aliases(text, aliases if aliases is not None else DEFAULT_BRAND_ALIASES)
+    text = _normalize_aliases(text, aliases if aliases is not None else load_brand_names()[0])
 
     # All match spans per id (finditer, so a standalone bare-stem mention is
     # distinguishable from one that is only the prefix of a longer model name).
