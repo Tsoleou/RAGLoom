@@ -30,12 +30,28 @@ _COMPARISON_RE = re.compile(
 # product_id) to Chinese aliases users may type. The canonical key is what
 # replaces the alias in the query string before pattern matching, so
 # 'starforge' must be the prefix of product_ids like 'starforge_x1'.
+# Both Traditional and Simplified variants are listed — the persona mirrors the
+# visitor's variant, so generated transliterations come in both.
+# '流明' is deliberately NOT a luminos alias: it is the Chinese word for the
+# lumens unit, so spec sentences like '300流明' would false-match the brand.
 DEFAULT_BRAND_ALIASES: dict[str, list[str]] = {
-    "starforge":  ["星鋒", "星峰"],
-    "visionbook": ["維森書", "視覺書"],
-    "novapad":    ["諾瓦", "諾瓦帕"],
-    "titanbook":  ["泰坦書", "鈦書"],
-    "luminos":    ["璐米諾", "流明"],
+    "starforge":  ["星鋒", "星峰", "星锋"],
+    "visionbook": ["維森書", "視覺書", "维森书", "视觉书"],
+    "novapad":    ["諾瓦", "諾瓦帕", "诺瓦", "诺瓦帕"],
+    "titanbook":  ["泰坦書", "鈦書", "泰坦书", "钛书"],
+    "luminos":    ["璐米諾", "璐米诺"],
+}
+
+
+# Canonical display casing per brand stem, for restoring transliterated names
+# in generated replies. Keys mirror DEFAULT_BRAND_ALIASES; a stem missing here
+# falls back to str.capitalize().
+BRAND_DISPLAY: dict[str, str] = {
+    "starforge":  "StarForge",
+    "visionbook": "VisionBook",
+    "novapad":    "NovaPad",
+    "titanbook":  "TitanBook",
+    "luminos":    "Luminos",
 }
 
 
@@ -111,6 +127,96 @@ def detect_product_filter(
         return None
 
     return deduped[0]
+
+
+def restore_english_names(
+    text: str,
+    aliases: Optional[Mapping[str, list[str]]] = None,
+    display: Optional[Mapping[str, str]] = None,
+) -> str:
+    """Replace Chinese product-name transliterations with the English original.
+
+    The reverse of _normalize_aliases, applied to *generated* text: the 4B
+    generator under the persona's "never switch languages mid-reply" rule
+    tends to transliterate product names in Chinese answers (StarForge →
+    星鋒). Product names are proper nouns and must stay English; a prompt
+    rule alone is not reliable at this model size, so the final reply is
+    normalized back in code.
+
+    Longest alias first across ALL brands, same rationale as
+    _normalize_aliases. A space is inserted where the restored name would
+    fuse with adjacent ASCII alphanumerics (星鋒X1 → 'StarForge X1', not
+    'StarForgeX1'); against CJK no space is added, matching how English
+    names sit in Chinese prose.
+    """
+    if not text:
+        return text
+    alias_map = aliases if aliases is not None else DEFAULT_BRAND_ALIASES
+    display_map = display if display is not None else BRAND_DISPLAY
+
+    pairs = [
+        (alt, canonical)
+        for canonical, alts in alias_map.items()
+        for alt in alts
+        if alt
+    ]
+    pairs.sort(key=lambda p: len(p[0]), reverse=True)
+
+    for alt, canonical in pairs:
+        if alt not in text:
+            continue
+        name = display_map.get(canonical) or canonical.capitalize()
+
+        def _sub(m: re.Match, _name: str = name) -> str:
+            s = m.string
+            before = s[m.start() - 1] if m.start() > 0 else ""
+            after = s[m.end()] if m.end() < len(s) else ""
+            out = _name
+            if before.isascii() and before.isalnum():
+                out = " " + out
+            if after.isascii() and after.isalnum():
+                out = out + " "
+            return out
+
+        text = re.sub(re.escape(alt), _sub, text)
+    return text
+
+
+# The CJK char right before a model token being one of these almost always
+# means ordinary prose ('這台X1', '哪款Pro'), not a transliterated brand name.
+_MENTION_STOPCHARS = frozenset("台款的這那这部機机型號号是有跟和與与比薦荐")
+
+
+def find_untranslated_mentions(text: str, product_ids: Iterable[str]) -> List[str]:
+    """Snippets that look like an *unknown* transliteration of a product name.
+
+    Run AFTER restore_english_names has replaced every known alias: CJK chars
+    still fused directly onto a catalog model token (the letter-bearing part
+    of a product_id, e.g. 'x1' in starforge_x1) usually mean the generator
+    invented a transliteration the alias table doesn't know ('星輝X1').
+    Heuristic, log-only — snippets exist so new variants get added to
+    DEFAULT_BRAND_ALIASES, never to mutate the reply.
+    """
+    if not text or not text.strip():
+        return []
+    tokens: set[str] = set()
+    for pid in product_ids:
+        for part in str(pid).split("_")[1:]:
+            # Letter-bearing only: bare numbers ('17', '9000') sit next to CJK
+            # in perfectly normal spec prose (續航17小時).
+            if len(part) >= 2 and any(c.isalpha() for c in part):
+                tokens.add(part)
+    if not tokens:
+        return []
+    body = "|".join(re.escape(t) for t in sorted(tokens, key=len, reverse=True))
+    pattern = re.compile(
+        rf"([一-鿿]{{2,6}})({body})\b", flags=re.IGNORECASE | re.ASCII
+    )
+    return [
+        m.group(0)
+        for m in pattern.finditer(text)
+        if m.group(1)[-1] not in _MENTION_STOPCHARS
+    ]
 
 
 def find_products_in_text(
