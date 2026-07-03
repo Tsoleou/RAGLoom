@@ -9,6 +9,8 @@ params, anchor lists, edge wiring, etc.
 
 import json
 
+from core.product_matcher import DEFAULT_BRAND_ALIASES
+
 
 def _default_chat_graph() -> dict:
     """Server-side single source of truth for the default pipeline graph.
@@ -82,13 +84,10 @@ def _default_chat_graph() -> dict:
     # ── Auxiliary row ───────────────────────────────────────────────
     nodes.extend([
         {"id": "pselector",  "type": "product_selector", "position": {"x": QO + GAP_X * 2, "y": Y_AUX},
-         "params": {"mode": "rule", "model": "gemma3:4b", "aliases": json.dumps({
-             "starforge": ["星鋒", "星峰"],
-             "visionbook": ["維森書", "視覺書"],
-             "novapad": ["諾瓦", "諾瓦帕"],
-             "titanbook": ["泰坦書", "鈦書"],
-             "luminos": ["璐米諾", "流明"],
-         }, ensure_ascii=False, indent=2)}},
+         "params": {"mode": "rule", "model": "gemma3:4b",
+                    # Single source of truth — an inline copy here once drifted
+                    # from core (the '流明'/lumens false-match, P5).
+                    "aliases": json.dumps(DEFAULT_BRAND_ALIASES, ensure_ascii=False, indent=2)}},
         {"id": "refloader",  "type": "reference_loader", "position": {"x": QO + GAP_X * 5, "y": Y_AUX},
          "params": {"source_path": "./knowledge_base/_reference"}},
         {"id": "sysprompt",  "type": "system_prompt",    "position": {"x": QO + GAP_X * 7, "y": Y_AUX},

@@ -8,11 +8,18 @@ No FastAPI / app state here — the chat router owns the pipeline singleton.
 """
 
 import json
+import logging
 from pathlib import Path
 from typing import Iterable, Optional
 
 from config.settings import Settings
-from core.product_matcher import find_products_in_text
+from core.product_matcher import (
+    find_products_in_text,
+    find_untranslated_mentions,
+    restore_english_names,
+)
+
+logger = logging.getLogger(__name__)
 
 # Product images live beside the product docs and are served at /product_images
 # (see api/server.py). Same <product_id>.png convention as the static mount, so a
@@ -195,6 +202,24 @@ def _extract_chat_response(
         except (ValueError, json.JSONDecodeError):
             pass
         break
+
+    # Product names are proper nouns — the 4B generator writing Chinese tends to
+    # transliterate them (StarForge → 星鋒) despite the persona rule, so the
+    # final text is normalized back in code. Runs on the post-critic text (a
+    # critic revise could reintroduce a transliteration) and before the image
+    # picker so matching sees restored English names. Skipped on blocked
+    # answers: refusals are operator-authored and name no products.
+    if reply_text and not blocked:
+        restored = restore_english_names(reply_text)
+        if restored != reply_text:
+            logger.info("Restored transliterated product name(s) in reply")
+            reply_text = restored
+        for snippet in find_untranslated_mentions(reply_text, catalog_ids or []):
+            logger.warning(
+                "Possible unmapped product transliteration in reply: %s "
+                "(consider adding it to DEFAULT_BRAND_ALIASES)",
+                snippet,
+            )
 
     # Product images: one per product the *reply* actually names. Matched against
     # the full catalog so a specific model isn't mis-attributed to its bare stem,
