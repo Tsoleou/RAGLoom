@@ -8,7 +8,6 @@
 import json
 from dataclasses import dataclass, field
 
-from core.product_matcher import DEFAULT_BRAND_ALIASES
 from core.scope_gate import (
     DEFAULT_ON_TOPIC_ANCHORS,
     DEFAULT_OFF_TOPIC_ANCHORS,
@@ -353,9 +352,9 @@ _register(NodeType(
         ParamDef("model", "Model (LLM mode)", "string", "gemma3:4b"),
         ParamDef(
             "aliases",
-            "Brand Aliases (JSON, rule mode)",
+            "Brand Aliases (JSON, rule mode — empty = use _reference/product_aliases.json)",
             "textarea",
-            json.dumps(DEFAULT_BRAND_ALIASES, ensure_ascii=False, indent=2),
+            "",
         ),
     ],
 ))
