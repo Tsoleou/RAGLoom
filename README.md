@@ -18,6 +18,8 @@ Built with Python, FastAPI, React, ChromaDB, and Ollama. No LangChain.
 - **Conversational inquiry flow** — turns the pipeline from a one-shot Q&A box into a guided booth conversation. The `IntentRouter` node classifies each visitor turn (one small LLM call) into one of four inquiry intents — `spec` / `recommend` / `compare` / `suitability` — re-detected *every turn*, so a topic-hopping visitor is followed immediately. The `DialogueFlow` node then runs the matching multi-stage script (e.g. `recommend` = elicit needs → recommend 1–2 models; `compare` = confirm which models → list key differences), appending the current stage's directive to the system prompt before generation. Stage and intent only advance on a *committed* turn — one where the generator actually produced an answer — so a guard short-circuit freezes the whole funnel: refusals and off-topic turns never pollute the conversation's stage or history, even though the dialogue nodes run upstream of `ScopeGate`. The single advance gate (`decide_advance`) is the one place designed to swap LLM judgement for deterministic slot logic, hardening a script without changes elsewhere. Ships as the active `booth_inquiry` profile.
 - **Always-on reference data** — the `ReferenceLoader` node loads a static reference file (e.g. a product comparison CSV) and injects it directly into every prompt, guaranteeing broad coverage for comparison queries independent of vector retrieval results.
 - **Metadata-filtered retrieval** — product documents are tagged with a `product_id` at ingest time (derived from filename). The `Retriever` node accepts a filter parameter to scope retrieval to a single product. The `ProductSelector` node, included in the default pipeline, classifies query intent in one of two modes — `rule` (fast string matching against the collection's `product_id`s, zero LLM latency) or `llm` (small LLM pass for ambiguous phrasing) — and feeds the filter automatically. Comparison or unrecognized queries fall through to broad search.
+- **Product images in replies** — the chat response attaches one image per product the *reply* actually names (`knowledge_base/product_images/<product_id>.png`), matched against the full catalog with span-aware disambiguation so a specific model isn't mis-attributed to its base product, and bounded to the products actually retrieved — a hallucinated product name can never resolve to a real image.
+- **Product-name normalization** — a 4B model writing Chinese tends to transliterate English product names (StarForge X1 → 星鋒 X1). Product names are proper nouns, so the final reply is normalized back to English in code using the operator-editable alias table (see [Product names & Chinese aliases](#product-names--chinese-aliases)); transliterations the table doesn't know yet are logged as candidates to add. The same table drives Chinese query routing and reply-image matching — one file, three behaviors.
 - **Inline editing** — the `QueryInput` node lets you type the question directly on the node; no config panel round-trip.
 - **Golden-set eval with LLM-as-judge** — `python -m eval.runner --llm-judge` runs a curated regression set through the pipeline and audits each answer with a second LLM call that returns explicit `hallucinated_claims` lists. Gates on the binary signal (claim list empty / non-empty) rather than noisy float scores so same-commit reruns don't flip pass/fail. See [Eval Harness](#eval-harness) below.
 - **Retrieval-quality eval inside the editor** — a dedicated `eval` node family (`EvalCaseLoader`, `CoverageMetric` (Hit@K), `ScoreDistributionMetric`, `DiversityMetric`, `FactsCoverageMetric`, `EvalReport`) and a **Run Batch** button that sweeps any graph across a selected scope of golden-set cases (all / by category / by id list) and renders macro averages, per-category breakdown, worst-K, and a per-case table. A ready-to-load `retrieval_eval` profile ships with the guard stack pre-wired, so you can drop in a graph variant and observe its retrieval behaviour without touching the chat path.
@@ -80,7 +82,7 @@ Four code-level enforcement points — `Guardrail`, `PriceGuard`, `ScopeGate`, `
 | `core/generator.py` | Calls Ollama LLM for answer generation |
 | `core/critic.py` | Second-pass self-critique (audit / revise modes) |
 | `core/product_selector.py` | LLM-based intent classifier that maps a query to a single `product_id` (or `NONE` for ambiguous/comparison queries) |
-| `core/product_matcher.py` | Rule-based intent classifier — word-boundary regex match (CJK-aware via `re.ASCII`) against `product_id`s. Used by the chat pipeline and the `ProductSelector` node's `rule` mode for zero-latency point-query routing. |
+| `core/product_matcher.py` | Rule-based product-name matching — word-boundary regex (CJK-aware via `re.ASCII`) against `product_id`s, a Chinese alias table (operator-editable `product_aliases.json`, hot-reloaded), and reply-side restoration of transliterated product names. Drives point-query routing, reply normalization, and reply-image matching. |
 | `core/pipeline.py` | Orchestrates `ingest()` and `query()` for the chat interface |
 | `core/eval_metrics.py` | Pure-compute helpers for the Editor eval nodes — coverage / score distribution / diversity / facts coverage / batch aggregation. Mirrors `eval/scorer.py` algorithms so node and CLI eval give matching numbers. |
 | `core/path_guard.py` | Confines graph file-path params (`source_path`, `persist_path`, `golden_set_path`) to an allowlist of project roots |
@@ -287,6 +289,7 @@ At-rest encryption protects the *files*; it can't stop a visitor reaching them, 
 
 - **Models** — `make pull-model M=<model>` (e.g. `llama3.2`), then pick it in the operator editor's node config (or set `RAG_LLM_MODEL` and restart). Models persist across restarts.
 - **Knowledge base** — drop files into the host `knowledge_base/` folder (bind-mounted), then click **Load KB** in `/admin` to re-index.
+- **Products** — adding or renaming a product is a pure data change (document + one CSV row + one alias entry + optional image); see [Product names & Chinese aliases](#product-names--chinese-aliases). No code, no rebuild, no restart.
 - **Profiles / pipeline** — edit in the operator editor; saved under the mounted `config/profiles/`.
 - ⚠️ **Swapping the embedder invalidates the vector store** (dimension mismatch → garbage retrieval). After changing `RAG_EMBEDDING_MODEL`, you **must re-ingest** (Load KB). Swapping the LLM needs no re-index.
 
@@ -297,6 +300,22 @@ Place product documents in the `knowledge_base/` directory. Supported formats: `
 Files matching `product_*.{ext}` are automatically tagged with a `product_id` metadata field (derived from the filename) at ingest time, enabling metadata-filtered retrieval.
 
 Place always-on reference files (e.g. a product comparison CSV) in `knowledge_base/_reference/`. These are loaded at startup and injected directly into every prompt — they are not indexed in the vector store.
+
+### Product names & Chinese aliases
+
+`knowledge_base/_reference/product_aliases.json` maps each brand stem (the leading token of its `product_id`s) to its canonical display casing and Chinese aliases:
+
+```json
+{
+  "starforge": { "display": "StarForge", "aliases": ["星鋒", "星峰", "星锋"] }
+}
+```
+
+One file drives three behaviors: Chinese query routing (「星鋒X1」 filters retrieval to `starforge_x1`), reply normalization (a transliterated name in a generated answer is restored to `StarForge X1`), and reply-image matching. The file is hot-reloaded on change — editing it on a running kiosk takes effect on the next query, no restart — is read through the KB encryption layer, and falls back to a built-in table when missing or malformed (a broken edit degrades matching, never breaks chat).
+
+It is deliberately a `.json` inside `_reference/`: the reference loader only injects `.txt`/`.md`/`.csv`/`.pdf` and ingest never descends into `_reference/`, so this metadata is **never sent to the LLM and never indexed** — it exists purely for code-side string matching and costs zero prompt tokens.
+
+**Adding a product** therefore needs no code and no restart: upload `product_<id>.txt` (Knowledge tab or the folder), add a row to `_reference/product_comparison.csv`, add the brand to `product_aliases.json` if it's new, and drop `product_images/<id>.png` if you have one. **Renaming** is the same set: delete + re-upload the document under the new name (its chunks are cleaned up automatically), then update the same files.
 
 ### Injecting documents from the editor
 

@@ -62,7 +62,7 @@ from core.eval_metrics import (
     compute_facts_coverage,
 )
 from pathlib import Path
-from core.product_matcher import detect_product_filter, DEFAULT_BRAND_ALIASES
+from core.product_matcher import detect_product_filter
 import json
 import re
 
@@ -454,15 +454,16 @@ def execute_product_selector(inputs: dict, params: dict) -> dict:
             for m in meta["metadatas"]
             if m and m.get("product_id")
         }
+        # Alias chain: node param (explicit per-profile override) → operator's
+        # _reference/product_aliases.json → built-in table. aliases=None lets
+        # detect_product_filter walk the file/default layers itself.
+        aliases = None
         aliases_raw = (params.get("aliases") or "").strip()
         if aliases_raw:
             try:
                 aliases = json.loads(aliases_raw)
             except json.JSONDecodeError as e:
                 print(f"[Executor:ProductSelector] Invalid aliases JSON, using defaults: {e}")
-                aliases = DEFAULT_BRAND_ALIASES
-        else:
-            aliases = DEFAULT_BRAND_ALIASES
         product_id = detect_product_filter(query, product_ids, aliases=aliases) or ""
     else:
         reference_data = inputs.get("reference_data", "") or ""

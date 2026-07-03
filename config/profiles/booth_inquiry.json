@@ -184,7 +184,7 @@
       "params": {
         "mode": "rule",
         "model": "gemma3:4b",
-        "aliases": "{\n  \"starforge\": [\n    \"星鋒\",\n    \"星峰\",\n    \"星锋\"\n  ],\n  \"visionbook\": [\n    \"維森書\",\n    \"視覺書\",\n    \"维森书\",\n    \"视觉书\"\n  ],\n  \"novapad\": [\n    \"諾瓦\",\n    \"諾瓦帕\",\n    \"诺瓦\",\n    \"诺瓦帕\"\n  ],\n  \"titanbook\": [\n    \"泰坦書\",\n    \"鈦書\",\n    \"泰坦书\",\n    \"钛书\"\n  ],\n  \"luminos\": [\n    \"璐米諾\",\n    \"璐米诺\"\n  ]\n}"
+        "aliases": ""
       }
     },
     {

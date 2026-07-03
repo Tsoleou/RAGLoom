@@ -1,0 +1,44 @@
+{
+  "starforge": {
+    "display": "StarForge",
+    "aliases": [
+      "星鋒",
+      "星峰",
+      "星锋"
+    ]
+  },
+  "visionbook": {
+    "display": "VisionBook",
+    "aliases": [
+      "維森書",
+      "視覺書",
+      "维森书",
+      "视觉书"
+    ]
+  },
+  "novapad": {
+    "display": "NovaPad",
+    "aliases": [
+      "諾瓦",
+      "諾瓦帕",
+      "诺瓦",
+      "诺瓦帕"
+    ]
+  },
+  "titanbook": {
+    "display": "TitanBook",
+    "aliases": [
+      "泰坦書",
+      "鈦書",
+      "泰坦书",
+      "钛书"
+    ]
+  },
+  "luminos": {
+    "display": "Luminos",
+    "aliases": [
+      "璐米諾",
+      "璐米诺"
+    ]
+  }
+}
