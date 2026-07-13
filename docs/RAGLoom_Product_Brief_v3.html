@@ -1,0 +1,289 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>RAGLoom — Product Brief · v3</title>
+<style>
+  @page { size: A4; margin: 16mm 15mm; }
+  :root {
+    --accent: #d4622a;
+    --accent-soft: #f3e2d6;
+    --ink: #1c1c1e;
+    --muted: #5b5b60;
+    --line: #e3e3e6;
+    --code-bg: #f5f4f2;
+    --limit-bg: #f4f5f7;
+    --limit-line: #9aa4b2;
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  body {
+    font: 10.5pt/1.5 -apple-system, "Segoe UI", Roboto, "Noto Sans TC", sans-serif;
+    color: var(--ink); margin: 0; background: #fff;
+  }
+  .page { margin-bottom: 4pt; }
+  .cards, .card, .glance, .stat, pre, table, .callout, .limits { page-break-inside: avoid; }
+  h1, h2, h3 { page-break-after: avoid; }
+  h1 { font-size: 30pt; margin: 0 0 2pt; letter-spacing: -0.5pt; }
+  h2 {
+    font-size: 13pt; margin: 22pt 0 8pt; color: var(--accent);
+    border-bottom: 2px solid var(--line); padding-bottom: 4pt;
+    text-transform: uppercase; letter-spacing: 0.5pt;
+  }
+  h3 { font-size: 11pt; margin: 16pt 0 6pt; }
+  p { margin: 6pt 0; }
+  .eyebrow { color: var(--accent); font-weight: 700; font-size: 8.5pt;
+             letter-spacing: 2pt; text-transform: uppercase; }
+  .lede { font-weight: 600; font-size: 12pt; margin: 4pt 0 6pt; }
+  .sub { color: var(--muted); }
+  .tag { display: inline-block; border: 1px solid var(--accent); color: var(--accent);
+         font-size: 8pt; font-weight: 700; padding: 1pt 6pt; border-radius: 10px;
+         letter-spacing: 0.5pt; margin-bottom: 8pt; }
+  .byline { color: var(--muted); font-size: 8.5pt; margin-top: 10pt;
+            border-top: 1px solid var(--line); padding-top: 8pt; }
+  .byline b { color: var(--ink); }
+  .callout {
+    background: var(--accent-soft); border-left: 3px solid var(--accent);
+    padding: 9pt 12pt; border-radius: 4px; font-weight: 600; margin: 8pt 0;
+  }
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 18pt; }
+  table { border-collapse: collapse; width: 100%; margin: 8pt 0; font-size: 9.5pt; }
+  th, td { border: 1px solid var(--line); padding: 5pt 8pt; text-align: left; vertical-align: top; }
+  th { background: #f7f7f9; font-weight: 700; }
+  td.k { font-weight: 700; color: var(--accent); white-space: nowrap; }
+  code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  code { background: var(--code-bg); padding: 0.5pt 3pt; border-radius: 3px; font-size: 0.9em; }
+  pre { background: var(--code-bg); border: 1px solid var(--line); border-radius: 6px;
+        padding: 10pt 12pt; font-size: 8.5pt; line-height: 1.35; white-space: pre; }
+  ul { margin: 6pt 0; padding-left: 16pt; }
+  li { margin: 3.5pt 0; }
+  .gloss { color: var(--muted); font-style: italic; }
+  .cards { display: grid; grid-template-columns: 1fr 1fr; gap: 10pt; margin: 8pt 0; }
+  .card { border: 1px solid var(--line); border-radius: 6px; padding: 9pt 11pt; }
+  .card .t { font-weight: 700; margin-bottom: 3pt; }
+  .card .t::before { content: "●"; color: var(--accent); margin-right: 5pt; font-size: 8pt; }
+  .note { color: var(--muted); font-size: 8.5pt; font-style: italic; margin: 4pt 0; }
+  .limits { background: var(--limit-bg); border: 1px solid var(--line);
+            border-left: 3px solid var(--limit-line); border-radius: 4px;
+            padding: 4pt 14pt 8pt; margin: 8pt 0; }
+  .limits h3 { margin-top: 10pt; }
+  .limits ul { padding-left: 16pt; }
+  .limits li { margin: 5pt 0; }
+  .limits b { color: var(--ink); }
+  .glance { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10pt; margin: 8pt 0; }
+  .stat { border: 1px solid var(--line); border-radius: 6px; padding: 12pt; text-align: center; }
+  .stat .n { font-size: 26pt; font-weight: 800; color: var(--accent); line-height: 1; }
+  .stat .l { font-size: 8pt; letter-spacing: 1pt; text-transform: uppercase; color: var(--muted); margin-top: 5pt; }
+  .stack { font-size: 10pt; } .stack b { color: var(--accent); }
+  footer { margin-top: 14pt; border-top: 1px solid var(--line); padding-top: 6pt;
+           color: var(--muted); font-size: 8pt; display: flex; justify-content: space-between; }
+</style>
+</head>
+<body>
+
+<!-- ===== PAGE 1 ===== -->
+<section class="page">
+  <div class="eyebrow">On-device RAG · Product Q&amp;A</div>
+  <h1>RAGLoom</h1>
+  <span class="tag">Technical evaluation brief · for a product / engineering PM</span>
+  <div class="lede">A visual RAG pipeline editor for local, on-device product Q&amp;A.</div>
+  <p class="sub">Drop in product spec documents, ask questions in natural language, and get
+  grounded answers — generated entirely on-device, with no cloud dependency. Built in
+  Python, FastAPI, React and ChromaDB on Ollama. <b>No LangChain.</b> This brief is written
+  to be <b>evaluated</b>, not just read: what each part does, why it was built that way, the
+  limits, and how you can verify the claims yourself.</p>
+  <div class="byline">
+    <b>Jun-Fu (Jeff) Liu</b> · portfolio.jeffliu.com · github.com/Tsoleou/RAGLoom · Product Brief · v3
+  </div>
+
+  <div class="two-col">
+    <div>
+      <h2>The problem</h2>
+      <div class="callout">How do you run a trustworthy product-Q&amp;A demo on a laptop,
+      with no internet and a small model — without it inventing specs or recommending a
+      competitor?</div>
+      <p>A booth wants a live product assistant, and on-device inference doubles as proof of
+      AI-PC performance. But local-only pushes you toward a small model (default
+      <code>gemma3:4b</code>, swappable) — and small models hallucinate, misread numbers, and
+      can't be trusted to follow instructions
+      on what matters at a booth: never quote a price, name a competitor, or recommend a
+      1.8&nbsp;kg laptop for a "under 1&nbsp;kg" request.</p>
+    </div>
+    <div>
+      <h2>The approach</h2>
+      <p>RAGLoom moves every high-stakes decision <b>out of the prompt and into code</b>. Four
+      deterministic gates short-circuit a query <i>before</i> it reaches the generator; the LLM
+      is left to do the one thing it's good at — phrasing a grounded answer.</p>
+      <p><b>Why it's evaluable:</b> safety lives in code you can read and test, not a prompt you
+      hope the model obeys. Each gate is a unit you can trigger and verify on its own.</p>
+    </div>
+  </div>
+
+  <h2>The safety layer — policy in code, not in the prompt</h2>
+  <div class="cards">
+    <div class="card"><div class="t">Guardrail</div>Keyword block list (e.g. competitor
+      brands) → canned refusal. <span class="gloss">Deterministic: a banned term always
+      refuses, on every run.</span></div>
+    <div class="card"><div class="t">PriceGuard</div>Detects price intent (price / MSRP /
+      多少錢…) and refuses <i>before</i> retrieval. <span class="gloss">So a pricing question
+      never reaches the model to guess a number.</span></div>
+    <div class="card"><div class="t">ScopeGate</div>Semantic on/off-topic check.
+      <span class="gloss">Catches off-topic questions smuggled behind an on-topic product name
+      ("my gran loved StarForge — what's the weather?"), which a plain similarity score waves
+      through.</span></div>
+    <div class="card"><div class="t">ConstraintFilter</div>Numeric spec gate. Resolves each
+      candidate's real spec and drops violators — <span class="gloss">so a 1.8&nbsp;kg laptop
+      is never recommended for a "under 1&nbsp;kg" request, instead of trusting the model to do
+      the &lt; comparison.</span></div>
+  </div>
+  <footer><span>RAGLoom — Product Brief · v3</span><span>github.com/Tsoleou/RAGLoom</span></footer>
+</section>
+
+<!-- ===== PAGE 2 ===== -->
+<section class="page">
+  <div class="eyebrow">The product</div>
+  <h2>Who it's for &amp; what you'd actually touch</h2>
+  <div class="two-col">
+    <div>
+      <h3>End users / booth visitors</h3>
+      <p class="sub">A Chat UI: ask a question, get a formatted, grounded answer with a
+      retrieval-details panel and (in chatbot mode) an animated avatar. Replies come back in
+      the visitor's language.</p>
+    </div>
+    <div>
+      <h3>Builders &amp; operators — you</h3>
+      <p class="sub">A Node Editor to assemble, rewire and A/B the pipeline, plus an in-editor
+      batch eval harness to measure retrieval quality <i>before</i> you ship a graph variant.
+      Configuration is the graph + the KB documents — not a code fork.</p>
+    </div>
+  </div>
+
+  <h2>Conversational inquiry flow — a booth assistant, not a search box</h2>
+  <p><code>IntentRouter</code> classifies each visitor turn (one small LLM call) into one of
+  four inquiry intents, re-detected <i>every turn</i> so a topic-hopping visitor is followed
+  immediately. <code>DialogueFlow</code> then runs the matching multi-stage script:</p>
+  <table>
+    <tr><td class="k">SPEC</td><td>Answer the asked spec from the KB</td></tr>
+    <tr><td class="k">RECOMMEND</td><td>Elicit needs → Recommend 1–2 models with a reason</td></tr>
+    <tr><td class="k">COMPARE</td><td>Confirm which models → List key differences + a fit tip</td></tr>
+    <tr><td class="k">SUITABILITY</td><td>Clarify the use case → Judge fit; suggest an alternative if not</td></tr>
+  </table>
+  <div class="callout" style="font-weight:400">
+    <b>Guard-aware state.</b> Stage and intent only advance on a <i>committed</i> turn — one
+    where the generator actually produced an answer. A guard short-circuit freezes the funnel,
+    so refusals and off-topic turns never pollute the conversation's stage or history. The
+    single advance gate (<code>decide_advance</code>) is the one place designed to swap LLM
+    judgement for deterministic slot logic — <span class="gloss">i.e. you can harden a script
+    from "model decides" to "rules decide" in one spot, without touching the rest.</span>
+  </div>
+
+  <h2>Capabilities — what's in the box</h2>
+  <div class="cards">
+    <div class="card"><div class="t">Visual node editor</div>
+      27 node types across ingest / query / eval. Real-time per-node execution status over
+      WebSocket; LLM-invoking nodes carry a distinct background tint, so the compute-heavy
+      steps are obvious at a glance.</div>
+    <div class="card"><div class="t">Dialogue-aware routing</div>
+      IntentRouter + DialogueFlow turn the pipeline into a guided booth conversation — four
+      inquiry scripts with guard-frozen state, shipped as the active <code>booth_inquiry</code>
+      profile.</div>
+    <div class="card"><div class="t">Metadata-filtered retrieval</div>
+      Docs tagged with a <code>product_id</code> at ingest. A ProductSelector routes
+      point-queries to a single product (rule mode = zero LLM latency); comparisons fall
+      through to broad search.</div>
+    <div class="card"><div class="t">Retrieval Judge</div>
+      An LLM rerank pass drops chunks that look similar but actually answer the <i>opposite</i>
+      (negation / polarity) — <span class="gloss">something pure vector similarity can't tell
+      apart.</span> Degrades to keep-all on error.</div>
+    <div class="card"><div class="t">Always-on reference data</div>
+      A static comparison table injected into every prompt, guaranteeing broad coverage for
+      comparison queries independent of vector retrieval.</div>
+    <div class="card"><div class="t">Persona presets &amp; structured output</div>
+      professional / chatbot registers. Chatbot mode emits grammar-constrained JSON
+      <code>{reply, emotion}</code> — <span class="gloss">the shape is enforced by the decoder,
+      not requested in a prompt,</span> and rendered as a themeable avatar.</div>
+  </div>
+
+  <footer><span>RAGLoom — Product Brief · v3</span><span>github.com/Tsoleou/RAGLoom</span></footer>
+</section>
+
+<!-- ===== PAGE 3 ===== -->
+<section class="page">
+  <div class="eyebrow">Under the hood</div>
+  <h2>Architecture</h2>
+  <pre>Ingest  Document → Loader → Chunker → Embedder → VectorStore (ChromaDB)
+
+Query   Question
+          │ Guardrail ─ hit ─► refusal      PriceGuard ─ hit ─► refusal
+          ▼
+        IntentRouter ─ intent ─► DialogueFlow (per-turn script + stage)
+          ▼
+        ProductSelector → Retriever → RetrievalJudge (LLM rerank)
+          │
+          ▼ ScopeGate ─ hit ─► refusal      ConstraintFilter ─ all dropped ─► refusal
+          ▼
+        PromptBuilder → Generator → OutputCritic → Answer
+              ▲                ▲
+        ReferenceLoader   SystemPrompt (persona + format)</pre>
+  <p class="note">Read left-to-right: any gate that fires exits early to a canned refusal — the
+  generator only runs on a query that passed every gate.</p>
+
+  <h2>How you'd evaluate it yourself</h2>
+  <p>Nothing below asks you to take quality on trust — each is something you can measure before
+  a show:</p>
+  <ul>
+    <li><b>Golden-set eval with LLM-as-judge</b> — a curated regression set, audited by a second
+      LLM that returns explicit <code>hallucinated_claims</code> lists. Gates on the binary
+      signal (claims empty / non-empty), not noisy float scores, so same-commit reruns don't
+      flicker pass/fail. <span class="gloss">This is the answer-quality check.</span></li>
+    <li><b>In-editor batch eval</b> — sweep the golden set through your graph and read macro
+      averages, per-category breakdown and worst-K. <span class="gloss">This measures
+      <i>retrieval</i> quality (did we fetch the right context?) — deterministic and
+      retrieval-only, separate from answer wording.</span> One click exports a self-contained
+      HTML report of the run.</li>
+    <li><b>Hardened local API</b> — every endpoint requires an auto-generated local token, CORS
+      is locked to the local origin, file-path params are allowlisted, and batch eval is
+      bounded. A stray browser tab can't drive your local pipeline.</li>
+  </ul>
+
+  <h2>Scope &amp; limits — what it is <i>not</i></h2>
+  <div class="limits">
+    <p class="sub">Stated up front, because an honest boundary is what makes the rest
+    evaluable:</p>
+    <ul>
+      <li><b>Model quality is a lever you control — and it's swappable.</b> Each LLM node's
+        model is a per-node setting: <code>gemma3:4b</code> is the default, and you can point any
+        node at a larger local model where the booth hardware allows. The design <i>target</i>
+        is staying trustworthy on a small model, not being locked to one; answer fluency tracks
+        whatever model you pick.</li>
+      <li><b>Two different quality questions, two different tools.</b> Batch eval measures
+        retrieval; it does <i>not</i> score answer wording. Answer hallucination is caught by
+        the separate golden-set LLM-judge. Don't read a green batch run as "answers are
+        correct."</li>
+      <li><b>Garbage in, garbage out on the KB.</b> Retrieval quality depends on curated,
+        <code>product_id</code>-tagged spec documents. Poorly written or mistagged docs surface
+        as low retrieval confidence, not silent wrong answers — but they still need fixing.</li>
+      <li><b>Single-machine, session-per-visitor.</b> Built for one booth conversation at a
+        time, not a high-concurrency multi-tenant server.</li>
+      <li><b>Tuned for Chinese &amp; English.</b> Guardrails, aliases and personas are validated
+        for zh/en; other languages will answer but aren't regression-covered.</li>
+    </ul>
+  </div>
+
+  <h2>Tech stack</h2>
+  <p class="stack"><b>Python</b> · FastAPI &nbsp;·&nbsp; <b>React</b> · Vite · TypeScript
+    &nbsp;·&nbsp; ChromaDB &nbsp;·&nbsp; <b>Ollama</b> (default gemma3:4b, per-node swappable) ·
+    nomic-embed-text · WebSocket &nbsp;·&nbsp; <b>No LangChain</b></p>
+
+  <h2>At a glance</h2>
+  <div class="glance">
+    <div class="stat"><div class="n">27</div><div class="l">Node types</div></div>
+    <div class="stat"><div class="n">4</div><div class="l">Code-level gates</div></div>
+    <div class="stat"><div class="n">0</div><div class="l">Cloud calls</div></div>
+  </div>
+
+  <footer><span>RAGLoom — Product Brief · v3</span><span>github.com/Tsoleou/RAGLoom</span></footer>
+</section>
+
+</body>
+</html>

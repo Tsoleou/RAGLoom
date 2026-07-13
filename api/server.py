@@ -124,6 +124,13 @@ if _PRODUCT_IMAGES.is_dir():
 if _DIST.is_dir():
     app.mount("/assets", StaticFiles(directory=_DIST / "assets"), name="assets")
 
+    # public/ 來的根層靜態資產（Vite build 時原樣複製到 dist 根）——kiosk 皮的
+    # avatar 表情圖 /avatar/*.webp、品牌 logo /brand/*.png 等。vite dev 從根目錄
+    # 直接服務，serve 模式得逐個掛出來，否則展場實機會缺圖。/assets 已另掛，
+    # html 檔由下方明確路徑處理，其餘子目錄一律照掛；新增 public 子目錄免改這裡。
+    for _pub in sorted(p for p in _DIST.iterdir() if p.is_dir() and p.name != "assets"):
+        app.mount(f"/{_pub.name}", StaticFiles(directory=_pub), name=f"pub_{_pub.name}")
+
     @app.get("/")
     def _serve_kiosk():
         return FileResponse(_DIST / "chat.html")

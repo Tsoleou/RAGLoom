@@ -14,6 +14,10 @@
     { "query": "我們的 Luminos S14 規格", "blocked": false, "note": "純自家產品查詢" },
 
     { "query": "競品 lenovo 如何", "keywords": ["lenovo"], "blocked": true, "matched": "lenovo", "note": "自訂關鍵字清單" },
-    { "query": "競品 lenovo 如何", "blocked": false, "note": "預設清單不含 lenovo → 不擋" }
+    { "query": "競品 lenovo 如何", "blocked": false, "note": "預設清單不含 lenovo → 不擋" },
+
+    { "query": "台積電股價多少", "keywords": ["股價", "大盤", "財報"], "blocked": true, "matched": "股價", "note": "CJK 關鍵字：純中文查詢無 ASCII word boundary，\\b股價\\b 永遠不中，須以子字串匹配" },
+    { "query": "大盤今天漲還是跌", "keywords": ["股價", "大盤", "財報"], "blocked": true, "matched": "大盤" },
+    { "query": "這台筆電價格會漲跌嗎", "keywords": ["股價", "大盤", "財報"], "blocked": false, "note": "合法問價：不含金融關鍵字子字串，不應誤擋（此即移除『漲跌』關鍵字的原因）" }
   ]
 }

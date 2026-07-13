@@ -171,7 +171,7 @@ _register(NodeType(
     ],
     outputs=[Port("query_out", "query", "Query Text")],
     params=[
-        ParamDef("blocked_keywords", "Blocked Keywords", "string", "asus, acer, msi, hp, dell, apple"),
+        ParamDef("blocked_keywords", "Blocked Keywords", "string", "asus, acer, msi, hp, dell, apple, 股價, 股票, 大盤, 財報, 市值, 比特幣, 加密貨幣, stock, bitcoin, crypto"),
         ParamDef(
             "refusal_message",
             "Refusal Message",
