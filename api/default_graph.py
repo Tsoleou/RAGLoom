@@ -45,7 +45,7 @@ def _default_chat_graph() -> dict:
         {"id": "qinput",     "type": "query_input",      "position": {"x": 0,             "y": Y_QUERY},
          "params": {"question": ""}},
         {"id": "guardrail",  "type": "guardrail",        "position": {"x": QO,            "y": Y_QUERY},
-         "params": {"blocked_keywords": "asus, acer, msi, hp, dell, apple", "refusal_message": ""}},
+         "params": {"blocked_keywords": "asus, acer, msi, hp, dell, apple, 股價, 股票, 大盤, 財報, 市值, 比特幣, 加密貨幣, stock, bitcoin, crypto", "refusal_message": ""}},
         {"id": "priceguard", "type": "price_guard",      "position": {"x": QO + GAP_X,     "y": Y_QUERY},
          "params": {}},
         {"id": "retriever",  "type": "retriever",        "position": {"x": QO + GAP_X * 2, "y": Y_QUERY},

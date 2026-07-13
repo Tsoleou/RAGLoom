@@ -68,6 +68,11 @@ DEFAULT_OFF_TOPIC_ANCHORS: list[str] = [
     "Questions about current events, breaking news, or politics",
     "Personal advice or chit-chat unrelated to consumer electronics",
     "關於金融、股市、投資、理財的問題",
+    # Explicit individual-stock anchor: a query like "台積電股價多少" carries a
+    # company name that leaks toward the tech/product centroid, so the generic
+    # 股市 anchor above didn't fully catch it (margin still landed ~+0.05).
+    # Naming 個股/股價/漲跌/大盤/財報 pulls those queries firmly off-topic.
+    "詢問某公司或個股的股價、市值、漲跌、大盤走勢或財報",
     "與筆電產品無關的日常生活話題（飲食、寵物、運動、娛樂等）",
     "關於新聞、時事、政治的問題",
     "與消費電子無關的個人建議或閒聊",

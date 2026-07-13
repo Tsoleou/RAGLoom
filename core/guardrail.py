@@ -79,7 +79,16 @@ def check_query(
         kw_lower = kw.strip().lower()
         if not kw_lower:
             continue
-        if re.search(rf"\b{re.escape(kw_lower)}\b", lower, flags=re.ASCII):
+        # ASCII keywords (brand tokens like "hp"/"asus") use word boundaries so
+        # they don't false-match inside longer ASCII words. CJK keywords have no
+        # ASCII word boundaries — an all-Chinese query like "台積電股價多少" has
+        # no \b anywhere under re.ASCII, so \b股價\b never fires. Match those as
+        # plain substrings, which is the correct unit for non-space-delimited CJK.
+        if kw_lower.isascii():
+            hit = re.search(rf"\b{re.escape(kw_lower)}\b", lower, flags=re.ASCII)
+        else:
+            hit = kw_lower in lower
+        if hit:
             return False, refusal_message, kw_lower
 
     return True, "", ""

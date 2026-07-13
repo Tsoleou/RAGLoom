@@ -2,11 +2,14 @@
 available cases for the batch-scope UI."""
 
 import asyncio
+from datetime import datetime
+from urllib.parse import quote
 
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import Response
 
 from api.eval_service import _load_golden_set_cases, _select_cases, run_batch
-from api.schemas import BatchEvalRequest
+from api.schemas import BatchEvalRequest, EvalReportRequest
 
 router = APIRouter()
 
@@ -58,6 +61,41 @@ async def batch_eval(req: BatchEvalRequest):
             status_code=504,
             detail=f"batch eval exceeded {_BATCH_EVAL_TIMEOUT_S}s timeout",
         )
+
+
+@router.post("/api/eval/report")
+def eval_report(req: EvalReportRequest):
+    """Render a downloadable, human-readable report (HTML or Markdown) from an
+    already-computed batch result posted back by the UI. Reuses the exact
+    builders behind the `eval/report.py` CLI so the file matches that output.
+
+    Returns the report as an attachment so the browser downloads it directly.
+    """
+    from eval.report import build_html, build_markdown
+
+    graph = {
+        "nodes": [n.model_dump() for n in req.graph.nodes],
+        "edges": [e.model_dump() for e in req.graph.edges],
+    }
+    when = datetime.now().strftime("%Y-%m-%d %H:%M")
+    stamp = datetime.now().strftime("%Y%m%d_%H%M")
+
+    if req.fmt == "md":
+        body = build_markdown(req.result, graph, req.graph_name, when, req.elapsed_s)
+        media_type = "text/markdown; charset=utf-8"
+        filename = f"eval_report_{stamp}.md"
+    else:
+        body = build_html(req.result, graph, req.graph_name, when, req.elapsed_s)
+        media_type = "text/html; charset=utf-8"
+        filename = f"eval_report_{stamp}.html"
+
+    return Response(
+        content=body,
+        media_type=media_type,
+        headers={
+            "Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}",
+        },
+    )
 
 
 @router.get("/api/eval/cases")

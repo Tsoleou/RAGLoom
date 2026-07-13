@@ -24,6 +24,7 @@ from core.guardrail import (
     parse_keywords as guardrail_parse_keywords,
 )
 from core.scope_gate import (
+    DEFAULT_ON_TOPIC_ANCHORS,
     ScopeBlocked,
     check_scope,
     check_scope_semantic,
@@ -62,7 +63,7 @@ from core.eval_metrics import (
     compute_facts_coverage,
 )
 from pathlib import Path
-from core.product_matcher import detect_product_filter
+from core.product_matcher import detect_product_filter, load_brand_names
 import json
 import re
 
@@ -265,6 +266,37 @@ def execute_price_guard(inputs: dict, params: dict) -> dict:
     }
 
 
+def _product_name_anchors() -> list[str]:
+    """Build on-topic scope anchors from the operator-editable brand file.
+
+    One sentence-length anchor per product, packing the display name plus all
+    Chinese aliases (星鋒 / 璐米諾 / …). Rare transliterations carry near-zero
+    cosine to the generic-spec anchors, so a bare product query like
+    "星河 值得買嗎？" would otherwise fall below the margin — same failure mode
+    the 液態金屬 anchor fixes. Sourced from load_brand_names() so it's mtime-
+    cached and stays in sync when an operator edits product_aliases.json — no
+    code change, no restart (the #21 philosophy).
+
+    Wrapped as sentences (not bare names) to keep cosine geometry parallel with
+    the existing anchors. Degrades to [] on any load failure — a broken brand
+    file must never break the scope gate.
+    """
+    try:
+        _aliases, display = load_brand_names()
+    except Exception as e:  # defensive: brand file must never crash a turn
+        print(f"[Executor:ScopeGate] WARNING: product anchors unavailable: {e}")
+        return []
+
+    anchors: list[str] = []
+    for stem, alts in _aliases.items():
+        name = display.get(stem) or stem
+        names = " ".join([name, *alts]).strip()
+        anchors.append(
+            f"關於 {names} 這款筆電的規格、價格、功能、比較或推薦"
+        )
+    return anchors
+
+
 def execute_scope_gate(inputs: dict, params: dict) -> dict:
     """Block off-topic queries; pass on-topic results through unchanged.
 
@@ -281,6 +313,14 @@ def execute_scope_gate(inputs: dict, params: dict) -> dict:
     if mode == "semantic":
         on_anchors = [a for a in (params.get("on_topic_anchors", "") or "").splitlines() if a.strip()]
         off_anchors = [a for a in (params.get("off_topic_anchors", "") or "").splitlines() if a.strip()]
+        # Empty textarea → start from the built-in defaults so injecting product
+        # anchors below doesn't silently drop the general-spec anchors (an empty
+        # list would otherwise fall back to defaults *inside* check_scope_semantic,
+        # but a product-only list would not). Then append per-product anchors so
+        # rare transliterations (星河 / 璐米諾) stay in scope automatically.
+        if not on_anchors:
+            on_anchors = list(DEFAULT_ON_TOPIC_ANCHORS)
+        on_anchors = on_anchors + _product_name_anchors()
         try:
             margin_threshold = float(params.get("margin_threshold", 0.0))
         except (TypeError, ValueError):

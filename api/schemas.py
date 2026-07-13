@@ -91,3 +91,19 @@ class BatchEvalRequest(BaseModel):
     graph: ExecuteRequest
     scope: BatchEvalScope
     worst_k: int = Field(3, ge=1, le=20)
+
+
+class EvalReportRequest(BaseModel):
+    """Render a human-readable report from an ALREADY-computed batch result.
+
+    The UI posts back the `/api/eval/batch` response it is already displaying,
+    so the report matches the on-screen numbers exactly — no expensive re-run.
+    """
+
+    # The verbatim /api/eval/batch response (per_case / aggregate / skipped).
+    result: dict
+    # Editor graph, used only to surface config (embedder / top_k / rerank).
+    graph: ExecuteRequest
+    fmt: str = Field("html", pattern="^(html|md)$")
+    graph_name: str = Field("editor", max_length=120)
+    elapsed_s: float = Field(0.0, ge=0)
