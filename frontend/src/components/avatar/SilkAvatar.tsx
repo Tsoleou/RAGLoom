@@ -34,12 +34,16 @@ const CFG: Record<
 // `bare` renders only the animated canvas (no box, scanline, status or bubble)
 // so callers can wrap it in their own frame — used for the right-rail avatar card
 // and the 40px mini glyphs beside assistant messages.
+// `animate` (default true) drives the continuous rAF loop; pass false for the
+// per-message mini glyphs so a long chat doesn't accumulate N live rAF loops —
+// they draw one static frame instead.
 export function SilkAvatar({
   state,
   message,
   size = 96,
   bare = false,
-}: AvatarProps & { bare?: boolean }) {
+  animate = true,
+}: AvatarProps & { bare?: boolean; animate?: boolean }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const frameRef = useRef(0);
   const stateRef = useRef<AvatarState>(state);
@@ -126,6 +130,12 @@ export function SilkAvatar({
     canvas.height = size * dpr;
     ctx.scale(dpr, dpr);
 
+    // Static mode: one frame, no perpetual loop (used for per-message glyphs).
+    if (!animate) {
+      draw(ctx, size);
+      return;
+    }
+
     function loop() {
       frameRef.current++;
       draw(ctx!, size);
@@ -134,7 +144,7 @@ export function SilkAvatar({
 
     rafRef.current = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(rafRef.current);
-  }, [draw, size]);
+  }, [draw, size, animate]);
 
   // Canvas-only: the composing layout supplies its own frame/status/message.
   if (bare) {

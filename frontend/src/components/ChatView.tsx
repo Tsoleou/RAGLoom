@@ -546,7 +546,7 @@ export function ChatView({ admin = true }: { admin?: boolean } = {}) {
                   className="flex gap-3 items-start justify-start"
                 >
                   <div className="w-10 h-10 flex-shrink-0 mt-0.5 rounded-[11px] overflow-hidden bg-[#0e1614] border border-[#1c2a26]">
-                    <SilkAvatar state={miniState} message="" bare size={40} />
+                    <SilkAvatar state={miniState} message="" bare size={40} animate={false} />
                   </div>
                   <div
                     className={`max-w-[76%] px-5 py-4 text-[15px] leading-[1.65] rounded-[4px_16px_16px_16px] whitespace-pre-wrap ${bubbleClass}`}
@@ -783,10 +783,15 @@ export function ChatView({ admin = true }: { admin?: boolean } = {}) {
                           ? "text-[#5c6a66]"
                           : "text-[#00ccaa]/80";
                       return (
-                        <div key={i} className="flex items-baseline gap-1.5">
-                          <span className={`w-3 ${c}`}>{symbol}</span>
-                          <span className="text-[#8a9a96] flex-1 truncate">{g.name}</span>
-                          <span className={`uppercase ${c}`}>{g.status}</span>
+                        <div key={i}>
+                          <div className="flex items-baseline gap-1.5">
+                            <span className={`w-3 ${c}`}>{symbol}</span>
+                            <span className="text-[#8a9a96] flex-1 truncate">{g.name}</span>
+                            <span className={`uppercase ${c}`}>{g.status}</span>
+                          </div>
+                          {g.detail && (
+                            <div className="text-[#5c6a66] ml-[18px] leading-relaxed">{g.detail}</div>
+                          )}
                         </div>
                       );
                     })}
@@ -802,10 +807,15 @@ export function ChatView({ admin = true }: { admin?: boolean } = {}) {
                     {rerank.verdicts.map((v) => {
                       const c = v.keep ? "text-[#00ccaa]/80" : "text-[#f0a040]";
                       return (
-                        <div key={v.i} className="flex items-baseline gap-1.5">
-                          <span className={`w-3 ${c}`}>{v.keep ? "✓" : "⊘"}</span>
-                          <span className="text-[#7fd8c4]/70 flex-1 truncate">{v.source}</span>
-                          <span className="text-[#5c6a66]">{v.score.toFixed(2)}</span>
+                        <div key={v.i}>
+                          <div className="flex items-baseline gap-1.5">
+                            <span className={`w-3 ${c}`}>{v.keep ? "✓" : "⊘"}</span>
+                            <span className="text-[#7fd8c4]/70 flex-1 truncate">{v.source}</span>
+                            <span className="text-[#5c6a66]">{v.score.toFixed(2)}</span>
+                          </div>
+                          {v.reason && (
+                            <div className="text-[#5c6a66] ml-[18px] leading-relaxed">{v.reason}</div>
+                          )}
                         </div>
                       );
                     })}
