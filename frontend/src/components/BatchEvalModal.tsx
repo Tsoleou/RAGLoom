@@ -105,7 +105,7 @@ export function BatchEvalModal({ open, graph, onClose }: Props) {
         if (data.length > 0 && !category) setCategory(data[0].category);
       })
       .catch((e) => {
-        const msg = `無法載入評估案例:${e}`;
+        const msg = `Failed to load eval cases: ${e}`;
         toast(msg, "error");
         setError(msg);
       });
@@ -181,7 +181,7 @@ export function BatchEvalModal({ open, graph, onClose }: Props) {
       // Batch runs are long and the user may have looked away — surface the
       // failure both as an immediate toast and as a persistent block in the
       // results area, so it's still there when they return.
-      const msg = `批次評估失敗:${e}`;
+      const msg = `Batch eval failed: ${e}`;
       toast(msg, "error");
       setError(msg);
     } finally {
@@ -355,16 +355,16 @@ export function BatchEvalModal({ open, graph, onClose }: Props) {
               role="alert"
               className="rounded border border-[#ff5566]/40 bg-[#2a1618] px-4 py-3 text-[#ffb3bd]"
             >
-              <div className="font-semibold text-[#ff8d9b]">執行失敗</div>
+              <div className="font-semibold text-[#ff8d9b]">Run failed</div>
               <div className="mt-1 whitespace-pre-wrap break-words leading-relaxed">{error}</div>
-              <div className="mt-1 text-[10px] text-[#c98a92]">調整範圍後可重新執行。</div>
+              <div className="mt-1 text-[10px] text-[#c98a92]">Adjust the range and run again.</div>
             </div>
           )}
 
           {running && (
             <div className="py-10 flex flex-col items-center gap-3">
               <div className="text-[#a070d0]">
-                Running graph for {selectedCount} cases… 已過 {elapsed}s
+                Running graph for {selectedCount} cases… {elapsed}s elapsed
               </div>
               {/* Indeterminate bar — honest "working" signal, no fake percentage. */}
               <div className="w-64 h-1 rounded-full bg-[#2a2a2a] overflow-hidden">
@@ -417,7 +417,7 @@ export function BatchEvalModal({ open, graph, onClose }: Props) {
                 <h3 className="text-[#aaa] font-semibold mb-2">Per Category</h3>
                 <div className="overflow-x-auto">
                   <table className="w-full border-collapse text-[11px]">
-                    <caption className="sr-only">各類別的指標平均分數</caption>
+                    <caption className="sr-only">Average metric scores per category</caption>
                     <thead>
                       <tr className="border-b border-[#333] text-[#888]">
                         <th scope="col" className="text-left py-1.5 pr-3 font-medium">Category</th>
@@ -487,11 +487,11 @@ export function BatchEvalModal({ open, graph, onClose }: Props) {
               <section>
                 <h3 className="text-[#aaa] font-semibold mb-2">
                   Per Case ({result.per_case.length})
-                  <span className="text-[10px] text-[#888] ml-2 font-normal">點欄位標題可排序</span>
+                  <span className="text-[10px] text-[#888] ml-2 font-normal">Click a column header to sort</span>
                 </h3>
                 <div className="overflow-x-auto">
                   <table className="w-full border-collapse text-[11px]">
-                    <caption className="sr-only">每個評估案例的各指標分數,點欄位標題可排序</caption>
+                    <caption className="sr-only">Metric scores per eval case; click a column header to sort</caption>
                     <thead>
                       <tr className="border-b border-[#333] text-[#888] sticky top-0 bg-[#1a1a1a]">
                         <SortableTh label="Case ID" sortKey="case_id" active={sortKey} dir={sortDir} ariaSort={ariaSort("case_id")} onSort={toggleSort} align="left" />

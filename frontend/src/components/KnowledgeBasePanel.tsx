@@ -40,7 +40,7 @@ export function KnowledgeBasePanel() {
       const data = await res.json();
       setDocs(data.documents || []);
     } catch {
-      toast("無法載入文件清單", "error");
+      toast("Failed to load document list", "error");
     } finally {
       setLoading(false);
     }
@@ -59,13 +59,13 @@ export function KnowledgeBasePanel() {
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok) {
-        toast(`已注入 ${file.name}（共 ${data.chunks} chunks）`, "success");
+        toast(`Ingested ${file.name} (${data.chunks} chunks)`, "success");
         await reload();
       } else {
-        toast(data.detail || "上傳失敗", "error");
+        toast(data.detail || "Upload failed", "error");
       }
     } catch {
-      toast("上傳失敗", "error");
+      toast("Upload failed", "error");
     } finally {
       setBusy(null);
     }
@@ -83,16 +83,16 @@ export function KnowledgeBasePanel() {
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok) {
-        toast(`已注入 ${name}（共 ${data.chunks} chunks）`, "success");
+        toast(`Ingested ${name} (${data.chunks} chunks)`, "success");
         setPasteOpen(false);
         setPasteName("");
         setPasteBody("");
         await reload();
       } else {
-        toast(data.detail || "注入失敗", "error");
+        toast(data.detail || "Ingest failed", "error");
       }
     } catch {
-      toast("注入失敗", "error");
+      toast("Ingest failed", "error");
     } finally {
       setBusy(null);
     }
@@ -100,9 +100,9 @@ export function KnowledgeBasePanel() {
 
   async function handleDelete(filename: string) {
     const ok = await confirm({
-      title: `刪除文件「${filename}」？`,
-      message: "這會一併移除它在向量庫中的所有 chunk，無法復原。",
-      confirmLabel: "刪除",
+      title: `Delete document "${filename}"?`,
+      message: "This also removes all of its chunks from the vector store and cannot be recovered.",
+      confirmLabel: "Delete",
     });
     if (!ok) return;
     setBusy(filename);
@@ -111,14 +111,14 @@ export function KnowledgeBasePanel() {
         method: "DELETE",
       });
       if (res.ok) {
-        toast(`已刪除 ${filename}`, "success");
+        toast(`Deleted ${filename}`, "success");
         await reload();
       } else {
         const data = await res.json().catch(() => ({}));
-        toast(data.detail || "刪除失敗", "error");
+        toast(data.detail || "Delete failed", "error");
       }
     } catch {
-      toast("刪除失敗", "error");
+      toast("Delete failed", "error");
     } finally {
       setBusy(null);
     }
@@ -128,13 +128,13 @@ export function KnowledgeBasePanel() {
     <div className="mx-auto flex h-full max-w-3xl flex-col gap-4 overflow-y-auto p-6">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-base font-bold text-[#e0e0e0]">知識庫文件</h2>
-          <p className="text-xs text-[#777]">注入的文件會加密儲存並即時索引進對話</p>
+          <h2 className="text-base font-bold text-[#e0e0e0]">Knowledge base documents</h2>
+          <p className="text-xs text-[#777]">Ingested documents are stored encrypted and indexed into chat in real time</p>
         </div>
         <div className="flex items-center gap-2">
           <button
             onClick={reload}
-            title="重新整理"
+            title="Refresh"
             className="flex h-8 w-8 items-center justify-center rounded-md border border-[#333] bg-[#252525] text-[#888] hover:text-[#00ccaa]"
           >
             <RefreshCw size={14} />
@@ -143,13 +143,13 @@ export function KnowledgeBasePanel() {
             onClick={() => setPasteOpen((v) => !v)}
             className="flex items-center gap-1.5 rounded-md border border-[#333] bg-[#252525] px-3 py-1.5 text-xs text-[#ccc] hover:bg-[#2a2a2a]"
           >
-            <Plus size={14} /> 貼上文字
+            <Plus size={14} /> Paste text
           </button>
           <button
             onClick={() => fileInputRef.current?.click()}
             className="flex items-center gap-1.5 rounded-md bg-[#e07830] px-3 py-1.5 text-xs font-medium text-white hover:bg-[#e08a48]"
           >
-            <Upload size={14} /> 上傳檔案
+            <Upload size={14} /> Upload file
           </button>
           <input
             ref={fileInputRef}
@@ -170,13 +170,13 @@ export function KnowledgeBasePanel() {
           <input
             value={pasteName}
             onChange={(e) => setPasteName(e.target.value)}
-            placeholder="檔名（例如 product_new.txt）"
+            placeholder="Filename (e.g. product_new.txt)"
             className="mb-2 w-full rounded-md border border-[#333] bg-[#1a1a1a] px-3 py-2 text-sm text-[#e0e0e0] outline-none focus:border-[#00ccaa]/60"
           />
           <textarea
             value={pasteBody}
             onChange={(e) => setPasteBody(e.target.value)}
-            placeholder="貼上文件內容…（.txt / .md / .csv）"
+            placeholder="Paste document content… (.txt / .md / .csv)"
             rows={6}
             className="mb-2 w-full resize-y rounded-md border border-[#333] bg-[#1a1a1a] px-3 py-2 text-sm text-[#e0e0e0] outline-none focus:border-[#00ccaa]/60"
           />
@@ -185,7 +185,7 @@ export function KnowledgeBasePanel() {
               onClick={() => setPasteOpen(false)}
               className="rounded-md border border-[#333] px-3 py-1.5 text-xs text-[#999] hover:bg-[#2a2a2a]"
             >
-              取消
+              Cancel
             </button>
             <button
               onClick={handlePasteSubmit}
@@ -193,7 +193,7 @@ export function KnowledgeBasePanel() {
               className="flex items-center gap-1.5 rounded-md bg-[#e07830] px-3 py-1.5 text-xs font-medium text-white hover:bg-[#e08a48] disabled:opacity-50"
             >
               {busy ? <Loader2 className="animate-spin" size={13} /> : <Plus size={13} />}
-              注入
+              Ingest
             </button>
           </div>
         </div>
@@ -202,10 +202,10 @@ export function KnowledgeBasePanel() {
       <div className="rounded-lg border border-[#2a2a2a] bg-[#1d1d1d]">
         {loading ? (
           <div className="flex items-center justify-center gap-2 p-8 text-sm text-[#777]">
-            <Loader2 className="animate-spin" size={16} /> 載入中…
+            <Loader2 className="animate-spin" size={16} /> Loading…
           </div>
         ) : docs.length === 0 ? (
-          <div className="p-8 text-center text-sm text-[#666]">尚無文件，請上傳或貼上。</div>
+          <div className="p-8 text-center text-sm text-[#666]">No documents yet — upload or paste one.</div>
         ) : (
           <ul className="divide-y divide-[#2a2a2a]">
             {docs.map((d) => (
@@ -216,17 +216,17 @@ export function KnowledgeBasePanel() {
                 </span>
                 {d.encrypted && (
                   <span
-                    title="已加密"
+                    title="Encrypted"
                     className="flex items-center gap-1 rounded bg-[#00ccaa]/10 px-1.5 py-0.5 text-[10px] text-[#00ccaa]"
                   >
-                    <ShieldCheck size={11} /> 加密
+                    <ShieldCheck size={11} /> Encrypted
                   </span>
                 )}
                 <span className="w-16 text-right text-[11px] text-[#666]">{fmtBytes(d.bytes)}</span>
                 <button
                   onClick={() => handleDelete(d.filename)}
                   disabled={busy === d.filename}
-                  title="刪除"
+                  title="Delete"
                   className="flex h-7 w-7 items-center justify-center rounded text-[#666] hover:bg-[#2a2a2a] hover:text-[#e0664a] disabled:opacity-40"
                 >
                   {busy === d.filename ? (

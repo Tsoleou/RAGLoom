@@ -246,7 +246,7 @@ export function FlowEditor() {
       })
       .catch((e) => {
         console.error("[FlowEditor] default graph fetch failed:", e);
-        if (!cancelled) toast("無法載入預設 pipeline,請從 Palette 拖曳節點或載入 Profile", "warning");
+        if (!cancelled) toast("Couldn't load the default pipeline — drag nodes from the Palette or load a Profile", "warning");
       });
     return () => {
       cancelled = true;
@@ -321,7 +321,7 @@ export function FlowEditor() {
           ?.dataType;
         const detail =
           srcType && tgtType ? `(${srcType} → ${tgtType})` : "";
-        toast(`無法連接:資料型別不符 ${detail}`.trim(), "warning");
+        toast(`Can't connect: data type mismatch ${detail}`.trim(), "warning");
         return;
       }
       // Style new edges by their source-port dataType so the primary data
@@ -456,9 +456,9 @@ export function FlowEditor() {
   const handleClear = useCallback(async () => {
     if (nodes.length === 0 && edges.length === 0) return;
     const ok = await confirm({
-      title: "清空整個 pipeline?",
-      message: "畫布上的所有節點與連線都會被移除,此動作無法復原。",
-      confirmLabel: "清空",
+      title: "Clear the entire pipeline?",
+      message: "All nodes and connections on the canvas will be removed. This cannot be undone.",
+      confirmLabel: "Clear",
     });
     if (!ok) return;
     setNodes([]);
@@ -489,7 +489,7 @@ export function FlowEditor() {
       body: JSON.stringify({ name }),
     });
     setActiveProfile(name);
-    toast(`Profile "${name}" 已設為客人對話使用`, "success");
+    toast(`Profile "${name}" is now used for visitor chat`, "success");
   }, [toast]);
 
   const handleSaveProfile = useCallback(async (name: string) => {
@@ -520,9 +520,9 @@ export function FlowEditor() {
     if (!graph) return;
     if (nodes.length > 0) {
       const ok = await confirm({
-        title: `載入 Profile "${name}"?`,
-        message: "目前畫布上的節點與連線會被此 Profile 取代。",
-        confirmLabel: "載入並取代",
+        title: `Load profile "${name}"?`,
+        message: "The nodes and connections currently on the canvas will be replaced by this Profile.",
+        confirmLabel: "Load and replace",
         danger: false,
       });
       if (!ok) return;
@@ -530,7 +530,7 @@ export function FlowEditor() {
     const { nodes: restoredNodes, edges: restoredEdges } = materializeServerGraph(graph, byTypeId);
     setNodes(restoredNodes);
     setEdges(restoredEdges);
-    toast(`已載入 Profile "${name}"`, "success");
+    toast(`Loaded profile "${name}"`, "success");
   }, [savedProfiles, nodes.length, confirm, toast, setNodes, setEdges, byTypeId]);
 
   // Build the SerializedGraph for the batch-eval modal. Same shape we send
@@ -698,10 +698,10 @@ export function FlowEditor() {
           {nodes.length === 0 && !nodeTypesLoading && (
             <div className="absolute inset-0 z-[4] flex items-center justify-center pointer-events-none">
               <div className="max-w-xs rounded-lg border border-dashed border-[#e07830]/30 bg-[#1a1a1a]/70 px-6 py-5 text-center">
-                <div className="text-sm font-medium text-[#c0c0c0]">空白畫布</div>
+                <div className="text-sm font-medium text-[#c0c0c0]">Empty canvas</div>
                 <div className="mt-1.5 text-xs leading-relaxed text-[#777]">
-                  從左側 <span className="text-[#e07830]">Node Palette</span> 拖曳節點開始,
-                  或從上方工具列 <span className="text-[#00ccaa]">Load</span> 一個 Profile。
+                  Drag nodes from the <span className="text-[#e07830]">Node Palette</span> on the left to start,
+                  or <span className="text-[#00ccaa]">Load</span> a Profile from the toolbar above.
                 </div>
               </div>
             </div>

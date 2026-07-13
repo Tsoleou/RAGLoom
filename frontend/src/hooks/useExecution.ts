@@ -93,14 +93,14 @@ export function useExecution(options: UseExecutionOptions = {}) {
       console.error("[Execution] WebSocket error:", err);
       expectedCloseRef.current = true;
       setState((prev) => ({ ...prev, isRunning: false }));
-      onErrorRef.current?.("無法連線到執行伺服器,請確認後端是否運行");
+      onErrorRef.current?.("Cannot reach the execution server — make sure the backend is running");
     };
 
     ws.onclose = () => {
       // A drop mid-run (server crash, network) never sends a complete/error
       // frame — report it so the run doesn't just silently stop.
       if (!expectedCloseRef.current) {
-        onErrorRef.current?.("執行連線中斷,pipeline 未完成");
+        onErrorRef.current?.("Execution connection dropped; the pipeline did not finish");
       }
       setState((prev) => ({ ...prev, isRunning: false }));
     };

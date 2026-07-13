@@ -129,17 +129,17 @@ function App() {
 }
 
 const VIEW_GUIDE: { name: string; desc: string }[] = [
-  { name: "Editor", desc: "拖曳節點建構 RAG pipeline,按 Run 執行" },
-  { name: "Chat", desc: "用目前的 pipeline 與知識庫對話" },
-  { name: "Knowledge", desc: "管理加密知識庫:注入或移除文件" },
-  { name: "Dashboard", desc: "分析使用者查詢行為與知識缺口" },
+  { name: "Editor", desc: "Drag nodes to build the RAG pipeline, then click Run" },
+  { name: "Chat", desc: "Chat with the current pipeline and knowledge base" },
+  { name: "Knowledge", desc: "Manage the encrypted knowledge base: ingest or remove documents" },
+  { name: "Dashboard", desc: "Analyze user query behavior and knowledge gaps" },
 ];
 
 const SHORTCUTS: { keys: string; desc: string }[] = [
-  { keys: "Enter", desc: "Chat 送出訊息" },
-  { keys: "Shift + Enter", desc: "Chat 換行" },
-  { keys: "Delete / Backspace", desc: "刪除選取的節點或連線" },
-  { keys: "Esc", desc: "取消輸入 / 關閉對話框" },
+  { keys: "Enter", desc: "Send message in Chat" },
+  { keys: "Shift + Enter", desc: "New line in Chat" },
+  { keys: "Delete / Backspace", desc: "Delete the selected node or connection" },
+  { keys: "Esc", desc: "Cancel input / close dialog" },
 ];
 
 function HelpModal({ open, onClose }: { open: boolean; onClose: () => void }) {
@@ -170,7 +170,7 @@ function HelpModal({ open, onClose }: { open: boolean; onClose: () => void }) {
             onClick={(e) => e.stopPropagation()}
           >
             <div className="mb-4 flex items-center justify-between">
-              <h2 className="text-sm font-bold text-[#e0e0e0]">RAGLoom · 使用說明</h2>
+              <h2 className="text-sm font-bold text-[#e0e0e0]">RAGLoom · Help</h2>
               <button
                 onClick={onClose}
                 aria-label="Close"
@@ -182,7 +182,7 @@ function HelpModal({ open, onClose }: { open: boolean; onClose: () => void }) {
 
             <div className="mb-4">
               <div className="mb-2 text-[10px] uppercase tracking-widest text-[#00ccaa]/60">
-                分頁
+                Tabs
               </div>
               <div className="space-y-1.5">
                 {VIEW_GUIDE.map((v) => (
@@ -196,7 +196,7 @@ function HelpModal({ open, onClose }: { open: boolean; onClose: () => void }) {
 
             <div>
               <div className="mb-2 text-[10px] uppercase tracking-widest text-[#00ccaa]/60">
-                鍵盤快捷鍵
+                Keyboard shortcuts
               </div>
               <div className="space-y-1.5">
                 {SHORTCUTS.map((s) => (

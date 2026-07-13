@@ -96,7 +96,7 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
                   onClick={() => close(false)}
                   className="rounded border border-[#333] bg-[#252525] px-3 py-1.5 text-xs text-[#aaa] transition-colors hover:bg-[#2a2a2a]"
                 >
-                  {pending.cancelLabel ?? "取消"}
+                  {pending.cancelLabel ?? "Cancel"}
                 </button>
                 <button
                   data-autofocus
@@ -107,7 +107,7 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
                       : "bg-[#c0443c] hover:bg-[#d65049]"
                   }`}
                 >
-                  {pending.confirmLabel ?? "確認"}
+                  {pending.confirmLabel ?? "Confirm"}
                 </button>
               </div>
             </motion.div>

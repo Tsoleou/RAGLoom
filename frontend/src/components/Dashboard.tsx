@@ -158,7 +158,7 @@ export function Dashboard() {
       a.click();
       URL.revokeObjectURL(url);
     } catch (e) {
-      setError(`匯出失敗: ${e instanceof Error ? e.message : String(e)}`);
+      setError(`Export failed: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
       setExporting(false);
     }
@@ -193,7 +193,7 @@ export function Dashboard() {
 
       {stats && stats.total === 0 ? (
         <div className="text-sm text-[#888] mt-10 text-center">
-          尚無查詢紀錄。到 Chat 分頁問幾個問題後回來看。
+          No query history yet. Ask a few questions in the Chat tab, then come back.
         </div>
       ) : stats ? (
         <div className="flex flex-col gap-5">
@@ -210,13 +210,13 @@ export function Dashboard() {
 
           {/* Marketing focus: which products + what people ask */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <BarList title="主要詢問的產品 · most-asked (primary subject)" data={stats.top_products} colorFor={() => "#00ccaa"} />
-            <BarList title="最常被提及的產品 · most-mentioned (incl. comparisons)" data={stats.most_mentioned} colorFor={() => "#7aa2f7"} />
+            <BarList title="Most-asked products · primary subject" data={stats.top_products} colorFor={() => "#00ccaa"} />
+            <BarList title="Most-mentioned products · incl. comparisons" data={stats.most_mentioned} colorFor={() => "#7aa2f7"} />
           </div>
 
           <div className="grid grid-cols-1 gap-3">
             <Card>
-              <div className="text-[10px] uppercase tracking-widest text-[#666] mb-3">熱門問題 · top questions</div>
+              <div className="text-[10px] uppercase tracking-widest text-[#666] mb-3">Top questions</div>
               {stats.top_questions.length === 0 ? (
                 <div className="text-xs text-[#444]">no data</div>
               ) : (
@@ -241,7 +241,7 @@ export function Dashboard() {
           {/* Knowledge gaps */}
           <Card>
             <div className="text-[10px] uppercase tracking-widest text-[#666] mb-3">
-              Knowledge gaps · 答得出但檢索分數低的高頻問題
+              Knowledge gaps · frequent questions answered despite low retrieval scores
             </div>
             {stats.knowledge_gaps.length === 0 ? (
               <div className="text-xs text-[#444]">no weak-retrieval queries — knowledge base covers asked questions well</div>
