@@ -65,13 +65,13 @@ export function NodePalette({ onDragStart }: Props) {
         )}
         {error && (
           <div className="py-2 space-y-1.5">
-            <div className="text-[10px] text-[#f0a040]">無法載入節點類型:{error}</div>
+            <div className="text-[10px] text-[#f0a040]">Failed to load node types: {error}</div>
             <button
               onClick={reload}
               className="flex items-center gap-1.5 rounded border border-[#f0a040]/40 px-2 py-1 text-[10px] text-[#f0a040] transition-colors hover:bg-[#f0a040]/10"
             >
               <RotateCw size={11} />
-              重試
+              Retry
             </button>
           </div>
         )}

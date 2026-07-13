@@ -48,10 +48,10 @@ export function UnlockGate({ children }: { children: ReactNode }) {
         setPhase("open");
       } else {
         const data = await res.json().catch(() => ({}));
-        setError(res.status === 401 ? "密碼錯誤" : data.detail || "解鎖失敗");
+        setError(res.status === 401 ? "Wrong password" : data.detail || "Unlock failed");
       }
     } catch {
-      setError("無法連線到伺服器");
+      setError("Cannot reach the server");
     } finally {
       setSubmitting(false);
     }
@@ -78,8 +78,8 @@ export function UnlockGate({ children }: { children: ReactNode }) {
             <Lock size={18} />
           </div>
           <div>
-            <h2 className="text-sm font-bold text-[#e0e0e0]">知識庫已加密鎖定</h2>
-            <p className="text-xs text-[#777]">輸入操作者密碼以解鎖並啟用對話</p>
+            <h2 className="text-sm font-bold text-[#e0e0e0]">Knowledge base is encrypted and locked</h2>
+            <p className="text-xs text-[#777]">Enter the operator password to unlock and enable chat</p>
           </div>
         </div>
 
@@ -88,7 +88,7 @@ export function UnlockGate({ children }: { children: ReactNode }) {
           autoFocus
           value={passphrase}
           onChange={(e) => setPassphrase(e.target.value)}
-          placeholder="操作者密碼"
+          placeholder="Operator password"
           className="mb-3 w-full rounded-md border border-[#333] bg-[#1a1a1a] px-3 py-2 text-sm text-[#e0e0e0] outline-none focus:border-[#00ccaa]/60"
         />
 
@@ -100,11 +100,11 @@ export function UnlockGate({ children }: { children: ReactNode }) {
           className="flex w-full items-center justify-center gap-2 rounded-md bg-[#e07830] py-2 text-sm font-medium text-white transition-colors hover:bg-[#e08a48] disabled:cursor-not-allowed disabled:opacity-50"
         >
           {submitting ? <Loader2 className="animate-spin" size={15} /> : <Lock size={15} />}
-          解鎖
+          Unlock
         </button>
 
         <p className="mt-4 text-[10px] leading-relaxed text-[#555]">
-          密碼用來在記憶體中派生加密金鑰，不會寫入磁碟。每次伺服器重啟都需重新解鎖。
+          The password derives the encryption key in memory and is never written to disk. You must unlock again after every server restart.
         </p>
       </form>
     </div>
