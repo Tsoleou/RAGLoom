@@ -1,5 +1,21 @@
 @import "tailwindcss";
 
+/* ── Self-hosted fonts (local-first: no external CDN, works offline) ──────────
+   The Soft HUD chat view uses Space Grotesk (display), Noto Sans TC (Han body)
+   and JetBrains Mono (telemetry). Bundled via @fontsource so a booth kiosk with
+   no network still renders the intended type. Only the weights the UI uses are
+   imported to keep the bundle lean. */
+@import "@fontsource/space-grotesk/400.css";
+@import "@fontsource/space-grotesk/500.css";
+@import "@fontsource/space-grotesk/600.css";
+@import "@fontsource/space-grotesk/700.css";
+@import "@fontsource/noto-sans-tc/400.css";
+@import "@fontsource/noto-sans-tc/500.css";
+@import "@fontsource/noto-sans-tc/700.css";
+@import "@fontsource/jetbrains-mono/400.css";
+@import "@fontsource/jetbrains-mono/500.css";
+@import "@fontsource/jetbrains-mono/700.css";
+
 html, body, #root {
   margin: 0;
   padding: 0;
@@ -26,6 +42,20 @@ html, body, #root {
 @keyframes glow-pulse {
   0%, 100% { box-shadow: 0 0 4px rgba(0, 204, 170, 0.25); }
   50%       { box-shadow: 0 0 14px rgba(0, 204, 170, 0.55); }
+}
+
+/* Soft HUD avatar-card scanline sweep (top→bottom). */
+@keyframes scanY {
+  0%   { top: 0; }
+  100% { top: 100%; }
+}
+
+/* ── Soft HUD type utilities (self-hosted families, see @imports above) ──── */
+.font-hud {
+  font-family: "Space Grotesk", "Noto Sans TC", system-ui, sans-serif;
+}
+.font-hud-mono {
+  font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
 }
 
 /* Indeterminate progress sweep for the batch-eval running state. */

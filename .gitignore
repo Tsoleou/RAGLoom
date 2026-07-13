@@ -42,6 +42,10 @@ CLAUDE_CODE_INSTRUCTION.md
 # Personal / local-only
 Res/
 
+# Design handoff bundles from claude.ai/design (large binary exports, not source)
+*-handoff.zip
+.design-handoff/
+
 # Eval results (regenerated each run)
 eval_results/
 

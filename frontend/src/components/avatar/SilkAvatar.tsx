@@ -1,16 +1,7 @@
 import { useRef, useEffect, useCallback } from "react";
 import type { AvatarProps, AvatarState } from "./types";
+import { SILK_ACCENT as ACCENT, SILK_STATUS_TEXT as STATUS_TEXT, rgba, type RGB } from "./silkTheme";
 
-// ── Palette (shared restrained accents, per state) ──
-type RGB = [number, number, number];
-const ACCENT: Record<AvatarState, { main: RGB; dim: RGB }> = {
-  idle:  { main: [63, 208, 189],  dim: [29, 125, 114] },
-  think: { main: [70, 200, 224],  dim: [31, 118, 131] },
-  talk:  { main: [242, 246, 250], dim: [120, 132, 146] },
-  happy: { main: [70, 224, 150],  dim: [28, 120, 80] },
-  error: { main: [224, 85, 105],  dim: [125, 37, 48] },
-};
-const rgba = (c: RGB, a: number) => `rgba(${c[0]},${c[1]},${c[2]},${a})`;
 const mix = (a: RGB, b: RGB, t: number): RGB => [
   Math.round(a[0] + (b[0] - a[0]) * t),
   Math.round(a[1] + (b[1] - a[1]) * t),
@@ -40,15 +31,15 @@ const CFG: Record<
   error: { flow: 0.000, amp: 0.07, alpha: 0.50, strands: 6, jitter: true, flicker: true },
 };
 
-const STATUS_TEXT: Record<AvatarState, string> = {
-  idle: "IDLE",
-  think: "SEARCHING...",
-  talk: "RESPONDING",
-  happy: "COMPLETE",
-  error: "ERROR",
-};
-
-export function SilkAvatar({ state, message, size = 96 }: AvatarProps) {
+// `bare` renders only the animated canvas (no box, scanline, status or bubble)
+// so callers can wrap it in their own frame — used for the right-rail avatar card
+// and the 40px mini glyphs beside assistant messages.
+export function SilkAvatar({
+  state,
+  message,
+  size = 96,
+  bare = false,
+}: AvatarProps & { bare?: boolean }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const frameRef = useRef(0);
   const stateRef = useRef<AvatarState>(state);
@@ -145,11 +136,22 @@ export function SilkAvatar({ state, message, size = 96 }: AvatarProps) {
     return () => cancelAnimationFrame(rafRef.current);
   }, [draw, size]);
 
+  // Canvas-only: the composing layout supplies its own frame/status/message.
+  if (bare) {
+    return (
+      <canvas
+        aria-hidden="true"
+        ref={canvasRef}
+        style={{ width: size, height: size, display: "block" }}
+      />
+    );
+  }
+
   return (
     <div className="flex flex-col items-center gap-1.5">
       {/* Scanline container */}
       <div
-        className="relative rounded-lg overflow-hidden bg-[#0e0e1a] border border-[#1a1a35] p-3"
+        className="relative rounded-lg overflow-hidden bg-[#0e1614] border border-[#1c2a26] p-3"
         role="img"
         aria-label={`Assistant avatar — ${STATUS_TEXT[state]}`}
       >
@@ -176,7 +178,7 @@ export function SilkAvatar({ state, message, size = 96 }: AvatarProps) {
       {message && (
         <div
           role="status"
-          className="bg-[#13132a] border border-[#252550] rounded-md px-2.5 py-1.5 text-[10px] text-[#c0c0e0] leading-relaxed max-w-[140px] text-center font-mono"
+          className="bg-[#0e1614] border border-[#1c2a26] rounded-md px-2.5 py-1.5 text-[10px] text-[#8fbfb2] leading-relaxed max-w-[140px] text-center font-mono"
         >
           {message}
         </div>
