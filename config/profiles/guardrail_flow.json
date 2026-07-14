@@ -1,0 +1,50 @@
+{
+  "nodes": [
+    {
+      "id": "qinput",
+      "type": "query_input",
+      "position": {
+        "x": 0,
+        "y": 200
+      },
+      "params": {
+        "question": "How does this compare to the Apple MacBook?"
+      }
+    },
+    {
+      "id": "guardrail",
+      "type": "guardrail",
+      "position": {
+        "x": 460,
+        "y": 200
+      },
+      "params": {
+        "blocked_keywords": "asus, acer, msi, hp, dell, apple",
+        "refusal_message": ""
+      }
+    },
+    {
+      "id": "display",
+      "type": "result_display",
+      "position": {
+        "x": 820,
+        "y": 200
+      },
+      "params": {}
+    }
+  ],
+  "edges": [
+    {
+      "source": "qinput",
+      "target": "guardrail",
+      "sourceHandle": "query",
+      "targetHandle": "query_in"
+    },
+    {
+      "source": "guardrail",
+      "target": "display",
+      "sourceHandle": "query_out",
+      "targetHandle": "answer"
+    }
+  ]
+}
