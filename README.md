@@ -6,6 +6,8 @@ A locally-hosted RAG (Retrieval-Augmented Generation) system for product Q&A. Dr
 
 Built with Python, FastAPI, React, ChromaDB, and Ollama. No LangChain.
 
+![RAGLoom visual node editor — the query pipeline (guardrails, retrieval, rerank, generator) wired as drag-and-drop nodes with live per-node execution status](doc/images/Editorview.png)
+
 ## Features
 
 - **Visual node editor** — drag-and-drop pipeline building with real-time per-node execution status pushed over WebSocket. Twenty-seven node types across **ingest**, **query**, and **eval** categories — twenty for the chat pipeline plus seven retrieval-quality / inspection eval nodes.
