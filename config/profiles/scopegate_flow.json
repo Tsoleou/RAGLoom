@@ -1,22 +1,85 @@
 {
   "nodes": [
     {
+      "id": "loader",
+      "type": "loader",
+      "position": {
+        "x": 0,
+        "y": 60
+      },
+      "params": {
+        "source_path": "./knowledge_base"
+      }
+    },
+    {
+      "id": "chunker",
+      "type": "chunker",
+      "position": {
+        "x": 320,
+        "y": 60
+      },
+      "params": {
+        "strategy": "section",
+        "chunk_size": 500,
+        "chunk_overlap": 50
+      }
+    },
+    {
+      "id": "embedder",
+      "type": "embedder",
+      "position": {
+        "x": 640,
+        "y": 60
+      },
+      "params": {
+        "model": "nomic-embed-text"
+      }
+    },
+    {
+      "id": "vstore",
+      "type": "vectorstore",
+      "position": {
+        "x": 960,
+        "y": 60
+      },
+      "params": {
+        "persist_path": "./chroma_db",
+        "collection_name": "rag_collection",
+        "wipe_collection": false
+      }
+    },
+    {
       "id": "qinput",
       "type": "query_input",
       "position": {
         "x": 0,
-        "y": 200
+        "y": 380
       },
       "params": {
         "question": "How do I invest in the stock market?"
       }
     },
     {
+      "id": "retriever",
+      "type": "retriever",
+      "position": {
+        "x": 500,
+        "y": 380
+      },
+      "params": {
+        "top_k": 5,
+        "score_threshold": 0.0,
+        "keyword_boost": 0.3,
+        "embedding_model": "nomic-embed-text",
+        "product_filter": ""
+      }
+    },
+    {
       "id": "scopegate",
       "type": "scope_gate",
       "position": {
-        "x": 460,
-        "y": 200
+        "x": 960,
+        "y": 380
       },
       "params": {
         "mode": "semantic",
@@ -31,24 +94,60 @@
       "id": "display",
       "type": "result_display",
       "position": {
-        "x": 900,
-        "y": 200
+        "x": 1420,
+        "y": 380
       },
       "params": {}
     }
   ],
   "edges": [
     {
+      "source": "loader",
+      "target": "chunker",
+      "sourceHandle": "documents",
+      "targetHandle": "documents"
+    },
+    {
+      "source": "chunker",
+      "target": "embedder",
+      "sourceHandle": "chunks",
+      "targetHandle": "chunks"
+    },
+    {
+      "source": "chunker",
+      "target": "vstore",
+      "sourceHandle": "chunks",
+      "targetHandle": "chunks"
+    },
+    {
+      "source": "embedder",
+      "target": "vstore",
+      "sourceHandle": "embeddings",
+      "targetHandle": "embeddings"
+    },
+    {
+      "source": "vstore",
+      "target": "retriever",
+      "sourceHandle": "collection",
+      "targetHandle": "collection"
+    },
+    {
       "source": "qinput",
-      "target": "scopegate",
+      "target": "retriever",
       "sourceHandle": "query",
       "targetHandle": "query"
+    },
+    {
+      "source": "retriever",
+      "target": "scopegate",
+      "sourceHandle": "results",
+      "targetHandle": "results_in"
     },
     {
       "source": "qinput",
       "target": "scopegate",
       "sourceHandle": "query",
-      "targetHandle": "results_in"
+      "targetHandle": "query"
     },
     {
       "source": "scopegate",
