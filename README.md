@@ -25,7 +25,7 @@ Built with Python, FastAPI, React, ChromaDB, and Ollama. No LangChain.
 - **Retrieval-quality eval inside the editor** — a dedicated `eval` node family (`EvalCaseLoader`, `CoverageMetric` (Hit@K), `ScoreDistributionMetric`, `DiversityMetric`, `FactsCoverageMetric`, `EvalReport`) and a **Run Batch** button that sweeps any graph across a selected scope of golden-set cases (all / by category / by id list) and renders macro averages, per-category breakdown, worst-K, and a per-case table. A ready-to-load `retrieval_eval` profile ships with the guard stack pre-wired, so you can drop in a graph variant and observe its retrieval behaviour without touching the chat path.
 - **Hardened local API** — all `/api/*` endpoints require an `X-Local-Token` that the backend auto-generates on startup (written to `.env.local`, injected transparently by the Vite dev proxy), CORS is restricted to the local origin, and graph file-path params (`source_path`, `persist_path`, `golden_set_path`) are confined to an allowlist of project directories. Batch eval is bounded (≤ 50 cases, ≤ 100 nodes, 600s timeout) so a single request can't exhaust the local LLM. The point: a stray browser tab on a malicious site can't drive your local pipeline.
 
-![Guardrail node — keyword-based block with amber match indicator](doc/images/KeywordGuardrail.png)
+![Query → Guardrail → Result — a blocked competitor-brand query short-circuits before retrieval, with the refusal mirrored onto the result node](doc/images/KeywordGuardrail.png)
 
 ## Architecture
 

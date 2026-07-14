@@ -1,0 +1,60 @@
+{
+  "nodes": [
+    {
+      "id": "qinput",
+      "type": "query_input",
+      "position": {
+        "x": 0,
+        "y": 200
+      },
+      "params": {
+        "question": "How do I invest in the stock market?"
+      }
+    },
+    {
+      "id": "scopegate",
+      "type": "scope_gate",
+      "position": {
+        "x": 460,
+        "y": 200
+      },
+      "params": {
+        "mode": "semantic",
+        "on_topic_anchors": "",
+        "off_topic_anchors": "",
+        "margin_threshold": -0.25,
+        "min_score": 0.7,
+        "embedding_model": "nomic-embed-text"
+      }
+    },
+    {
+      "id": "display",
+      "type": "result_display",
+      "position": {
+        "x": 900,
+        "y": 200
+      },
+      "params": {}
+    }
+  ],
+  "edges": [
+    {
+      "source": "qinput",
+      "target": "scopegate",
+      "sourceHandle": "query",
+      "targetHandle": "query"
+    },
+    {
+      "source": "qinput",
+      "target": "scopegate",
+      "sourceHandle": "query",
+      "targetHandle": "results_in"
+    },
+    {
+      "source": "scopegate",
+      "target": "display",
+      "sourceHandle": "results_out",
+      "targetHandle": "answer"
+    }
+  ]
+}
