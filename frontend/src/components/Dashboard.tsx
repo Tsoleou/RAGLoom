@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { RefreshCw, AlertTriangle, ShieldOff, Clock, MessageSquare, Download } from "lucide-react";
+import { RefreshCw, AlertTriangle, ShieldOff, Clock, MessageSquare, Download, Database, Search, Terminal, Play } from "lucide-react";
 
 // ── Types (mirror api/routers/dashboard.py responses) ──────────────
 type Bucket = { key: string; count: number };
@@ -31,6 +31,7 @@ type QueryRow = {
   latency_ms: number | null; status: string; blocked: number;
   blocked_reason: string | null; gate: string | null; intent: string;
   product: string | null; top_score: number | null; n_retrieved: number; n_passed: number;
+  answer?: string; critic_verdict?: string | null; critic_reason?: string | null;
 };
 
 const RANGES = [
@@ -38,6 +39,20 @@ const RANGES = [
   { label: "30d", days: 30 },
   { label: "All", days: 0 },
 ];
+
+// Read-only SQL console (self-diagnosis). Runs against a decrypted in-memory
+// snapshot server-side — table `queries`, these columns.
+type SqlResult = { columns: string[]; rows: unknown[][]; row_count: number; truncated: boolean };
+const SQL_COLUMNS = "id, ts, query, answer, profile, model, intent, product, status, blocked, blocked_reason, gate, top_score, n_retrieved, n_passed, top_source, rerank_kept, rerank_total, critic_verdict, critic_reason, latency_ms";
+const SQL_EXAMPLES: { label: string; sql: string }[] = [
+  { label: "Errors", sql: "SELECT ts, query, blocked_reason\nFROM queries WHERE status='error'\nORDER BY id DESC" },
+  { label: "Knowledge gaps", sql: "SELECT query, top_score, answer\nFROM queries\nWHERE blocked=0 AND top_score < 0.45\nORDER BY top_score" },
+  { label: "Blocked", sql: "SELECT ts, query, gate, blocked_reason\nFROM queries WHERE blocked=1\nORDER BY id DESC" },
+  { label: "Slowest", sql: "SELECT query, latency_ms, model\nFROM queries WHERE latency_ms IS NOT NULL\nORDER BY latency_ms DESC LIMIT 20" },
+  { label: "By intent", sql: "SELECT intent, COUNT(*) n, ROUND(AVG(top_score),3) avg_top\nFROM queries GROUP BY intent ORDER BY n DESC" },
+  { label: "Critic revised", sql: "SELECT query, critic_verdict, critic_reason\nFROM queries WHERE critic_verdict IS NOT NULL\nORDER BY id DESC" },
+];
+const SQL_DEFAULT = "SELECT ts, query, status, top_score, latency_ms\nFROM queries\nORDER BY id DESC\nLIMIT 50";
 
 // Stable colors per intent so the eye can track them across renders.
 const INTENT_COLOR: Record<string, string> = {
@@ -119,20 +134,56 @@ export function Dashboard() {
   const [days, setDays] = useState(7);
   const [stats, setStats] = useState<Stats | null>(null);
   const [rows, setRows] = useState<QueryRow[]>([]);
+  const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(false);
-  const [exporting, setExporting] = useState(false);
+  const [exporting, setExporting] = useState<null | "csv" | "db">(null);
   const [error, setError] = useState<string | null>(null);
+
+  // Read-only SQL console state.
+  const [sql, setSql] = useState(SQL_DEFAULT);
+  const [sqlResult, setSqlResult] = useState<SqlResult | null>(null);
+  const [sqlError, setSqlError] = useState<string | null>(null);
+  const [sqlRunning, setSqlRunning] = useState(false);
+
+  const runSql = useCallback(async () => {
+    setSqlRunning(true);
+    setSqlError(null);
+    try {
+      const res = await fetch("/api/dashboard/sql", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sql }),
+      });
+      const data = await res.json().catch(() => null);
+      // Defensive: any non-ok response (404 if the backend wasn't restarted, 422,
+      // 500, auth challenge) or an unexpected shape must surface as an error, not
+      // get fed to the result table where columns/rows would be undefined.
+      if (!res.ok || !data) {
+        setSqlError((data && (data.error || data.detail)) || `HTTP ${res.status}`);
+        setSqlResult(null);
+      } else if (data.error) {
+        setSqlError(data.error);
+        setSqlResult(null);
+      } else if (Array.isArray(data.columns) && Array.isArray(data.rows)) {
+        setSqlResult(data);
+      } else {
+        setSqlError("Unexpected response from server");
+        setSqlResult(null);
+      }
+    } catch (e) {
+      setSqlError(e instanceof Error ? e.message : String(e));
+      setSqlResult(null);
+    } finally {
+      setSqlRunning(false);
+    }
+  }, [sql]);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const [s, q] = await Promise.all([
-        fetch(`/api/dashboard/stats?days=${days}`).then((r) => r.json()),
-        fetch(`/api/dashboard/queries?limit=100`).then((r) => r.json()),
-      ]);
+      const s = await fetch(`/api/dashboard/stats?days=${days}`).then((r) => r.json());
       setStats(s);
-      setRows(q.queries || []);
     } catch (e) {
       setError(String(e));
     } finally {
@@ -142,25 +193,42 @@ export function Dashboard() {
 
   useEffect(() => { load(); }, [load]);
 
-  // Download the full query history for the selected range as CSV. The backend
-  // streams every row in the window (not just the 100 shown in the table).
-  const exportCsv = useCallback(async () => {
-    setExporting(true);
+  // Recent-queries table lives on its own fetch: it's always the latest rows
+  // (not date-filtered like the stats), and it refetches as the operator types
+  // in the search box. Question + answer text are decrypted server-side.
+  const reloadQueries = useCallback(() => {
+    fetch(`/api/dashboard/queries?limit=100&search=${encodeURIComponent(search)}`)
+      .then((r) => r.json())
+      .then((q) => setRows(q.queries || []))
+      .catch((e) => setError(String(e)));
+  }, [search]);
+
+  // Debounce so each keystroke doesn't fire a request.
+  useEffect(() => {
+    const t = setTimeout(reloadQueries, 300);
+    return () => clearTimeout(t);
+  }, [reloadQueries]);
+
+  // Download the full query history for the range: CSV (spreadsheet) or a clean
+  // decrypted SQLite .db (SQL tools). The backend exports every row in the
+  // window, not just the 100 shown in the table.
+  const downloadExport = useCallback(async (kind: "csv" | "db") => {
+    setExporting(kind);
     setError(null);
     try {
-      const res = await fetch(`/api/dashboard/export.csv?days=${days}`);
+      const res = await fetch(`/api/dashboard/export.${kind}?days=${days}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `query_history_${days === 0 ? "all" : `${days}d`}.csv`;
+      a.download = `query_history_${days === 0 ? "all" : `${days}d`}.${kind}`;
       a.click();
       URL.revokeObjectURL(url);
     } catch (e) {
       setError(`Export failed: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
-      setExporting(false);
+      setExporting(null);
     }
   }, [days]);
 
@@ -177,12 +245,17 @@ export function Dashboard() {
               </button>
             ))}
           </div>
-          <button onClick={exportCsv} disabled={loading || exporting || !stats || stats.total === 0}
+          <button onClick={() => downloadExport("csv")} disabled={loading || exporting !== null || !stats || stats.total === 0}
             title="Export the full query history for this range as CSV"
             className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded border border-[#333] text-[#888] hover:text-[#00ccaa] hover:bg-[#2a2a2a] transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
-            <Download size={13} className={exporting ? "animate-pulse" : ""} /> Export CSV
+            <Download size={13} className={exporting === "csv" ? "animate-pulse" : ""} /> Export CSV
           </button>
-          <button onClick={load} disabled={loading}
+          <button onClick={() => downloadExport("db")} disabled={loading || exporting !== null || !stats || stats.total === 0}
+            title="Export the full query history as a decrypted SQLite database (question + answer in plaintext) for SQL analysis"
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded border border-[#333] text-[#888] hover:text-[#00ccaa] hover:bg-[#2a2a2a] transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
+            <Database size={13} className={exporting === "db" ? "animate-pulse" : ""} /> Export DB
+          </button>
+          <button onClick={() => { load(); reloadQueries(); }} disabled={loading}
             className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded border border-[#333] text-[#888] hover:text-[#e0e0e0] hover:bg-[#2a2a2a] transition-colors disabled:opacity-50">
             <RefreshCw size={13} className={loading ? "animate-spin" : ""} /> Refresh
           </button>
@@ -258,15 +331,102 @@ export function Dashboard() {
             )}
           </Card>
 
+          {/* Read-only SQL console — ad-hoc diagnosis over the decrypted log */}
+          <Card>
+            <div className="flex items-center justify-between gap-3 mb-2">
+              <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-widest text-[#666]">
+                <Terminal size={12} /> SQL console · read-only
+              </div>
+              <div className="flex flex-wrap items-center gap-1.5">
+                {SQL_EXAMPLES.map((ex) => (
+                  <button key={ex.label} onClick={() => setSql(ex.sql)}
+                    className="px-2 py-0.5 text-[10px] rounded border border-[#2a2a2a] text-[#888] hover:text-[#00ccaa] hover:border-[#00ccaa]/40 transition-colors">
+                    {ex.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="text-[10px] text-[#555] mb-2">
+              Table <span className="text-[#888]">queries</span> · columns: <span className="text-[#777]">{SQL_COLUMNS}</span>
+            </div>
+            <textarea
+              value={sql}
+              onChange={(e) => setSql(e.target.value)}
+              onKeyDown={(e) => { if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); runSql(); } }}
+              spellCheck={false}
+              rows={5}
+              placeholder="SELECT ... FROM queries WHERE ..."
+              className="w-full font-mono text-xs bg-[#0f0f0f] border border-[#2a2a2a] rounded p-2.5 text-[#d0d0d0] placeholder-[#555] focus:outline-none focus:border-[#00ccaa] resize-y"
+            />
+            <div className="flex items-center gap-3 mt-2">
+              <button onClick={runSql} disabled={sqlRunning}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded bg-[#00ccaa] text-black font-medium hover:bg-[#00e0bb] transition-colors disabled:opacity-50">
+                <Play size={13} className={sqlRunning ? "animate-pulse" : ""} /> Run
+              </button>
+              <span className="text-[10px] text-[#555]">⌘/Ctrl + Enter · read-only, max 1000 rows</span>
+              {sqlResult && !sqlError && (
+                <span className="text-[10px] text-[#666] ml-auto">
+                  {sqlResult.row_count} row{sqlResult.row_count === 1 ? "" : "s"}{sqlResult.truncated ? " (truncated at 1000)" : ""}
+                </span>
+              )}
+            </div>
+
+            {sqlError && <div className="mt-2 text-xs text-[#ff5566] font-mono">⊘ {sqlError}</div>}
+
+            {sqlResult && !sqlError && Array.isArray(sqlResult.columns) && Array.isArray(sqlResult.rows) && (
+              <div className="mt-3 overflow-x-auto max-h-96 overflow-y-auto border border-[#1f1f1f] rounded">
+                <table className="w-full text-xs">
+                  <thead className="sticky top-0 bg-[#141414]">
+                    <tr className="text-[#555] text-left border-b border-[#2a2a2a]">
+                      {sqlResult.columns.map((c) => (
+                        <th key={c} className="py-1.5 px-2 font-normal whitespace-nowrap">{c}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {sqlResult.rows.map((row, i) => (
+                      <tr key={i} className="border-b border-[#1a1a1a] hover:bg-[#1a1a1a]">
+                        {row.map((cell, j) => {
+                          const s = cell === null ? "" : String(cell);
+                          return (
+                            <td key={j} className="py-1 px-2 max-w-[360px] truncate text-[#c0c0c0] align-top" title={s}>
+                              {cell === null ? <span className="text-[#444]">null</span> : s}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    ))}
+                    {sqlResult.rows.length === 0 && (
+                      <tr><td className="py-2 px-2 text-[#444]" colSpan={Math.max(1, sqlResult.columns.length)}>no rows</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </Card>
+
           {/* Recent queries table */}
           <Card>
-            <div className="text-[10px] uppercase tracking-widest text-[#666] mb-3">Recent queries</div>
+            <div className="flex items-center justify-between gap-3 mb-3">
+              <div className="text-[10px] uppercase tracking-widest text-[#666]">Recent queries</div>
+              <div className="relative">
+                <Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-[#555]" />
+                <input
+                  type="text"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Search question or answer…"
+                  className="pl-7 pr-2 py-1 w-60 text-xs bg-[#1a1a1a] border border-[#333] rounded text-[#d0d0d0] placeholder-[#555] focus:outline-none focus:border-[#00ccaa]"
+                />
+              </div>
+            </div>
             <div className="overflow-x-auto">
               <table className="w-full text-xs">
                 <thead>
                   <tr className="text-[#555] text-left border-b border-[#2a2a2a]">
                     <th className="py-1.5 pr-3 font-normal">Time</th>
                     <th className="py-1.5 pr-3 font-normal">Query</th>
+                    <th className="py-1.5 pr-3 font-normal">Answer</th>
                     <th className="py-1.5 pr-3 font-normal">Product</th>
                     <th className="py-1.5 pr-3 font-normal">Intent</th>
                     <th className="py-1.5 pr-3 font-normal">Status</th>
@@ -280,6 +440,7 @@ export function Dashboard() {
                     <tr key={r.id} className="border-b border-[#1f1f1f] hover:bg-[#1a1a1a]">
                       <td className="py-1.5 pr-3 text-[#666] whitespace-nowrap">{r.ts.slice(5, 16).replace("T", " ")}</td>
                       <td className="py-1.5 pr-3 max-w-[260px] truncate text-[#d0d0d0]" title={r.blocked_reason ? `${r.query}\n⊘ ${r.blocked_reason}` : r.query}>{r.query}</td>
+                      <td className="py-1.5 pr-3 max-w-[320px] truncate text-[#999]" title={r.answer || ""}>{r.answer || "–"}</td>
                       <td className="py-1.5 pr-3 whitespace-nowrap text-[#00ccaa]">{r.product || "–"}</td>
                       <td className="py-1.5 pr-3">
                         <span className="px-1.5 py-0.5 rounded text-[10px]" style={{ color: INTENT_COLOR[r.intent] || "#888", background: `${INTENT_COLOR[r.intent] || "#888"}1a` }}>{r.intent}</span>
@@ -294,7 +455,7 @@ export function Dashboard() {
                   ))}
                 </tbody>
               </table>
-              {rows.length === 0 && <div className="text-xs text-[#444] py-3">no queries yet</div>}
+              {rows.length === 0 && <div className="text-xs text-[#444] py-3">{search ? "no matching queries" : "no queries yet"}</div>}
             </div>
           </Card>
         </div>

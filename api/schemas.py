@@ -47,6 +47,12 @@ class ChatResetRequest(BaseModel):
     session_id: str = Field("", max_length=100)
 
 
+class SqlQueryRequest(BaseModel):
+    # 後台唯讀 SQL 查詢台。長度上限擋掉誤貼超長內容；真正的唯讀 / 單語句限制
+    # 在 query_log.run_readonly_sql 裡強制執行。
+    sql: str = Field(..., max_length=4000)
+
+
 class ChatProfileRequest(BaseModel):
     name: str
     # The full chat graph; required now that chat runs the graph end-to-end.
