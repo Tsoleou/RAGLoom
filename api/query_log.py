@@ -50,6 +50,7 @@ CREATE TABLE IF NOT EXISTS queries (
     critic_verdict TEXT,
     critic_revised INTEGER,
     critic_reason TEXT,                       -- why the critic passed/failed (encrypted at rest)
+    answer        TEXT,                       -- LLM final answer text (encrypted at rest)
     detail        TEXT                       -- raw retrieval/guards JSON for drill-down
 );
 CREATE INDEX IF NOT EXISTS idx_queries_ts ON queries(ts);
@@ -61,6 +62,7 @@ CREATE INDEX IF NOT EXISTS idx_queries_intent ON queries(intent);
 _MIGRATIONS = [
     ("product", "ALTER TABLE queries ADD COLUMN product TEXT"),
     ("critic_reason", "ALTER TABLE queries ADD COLUMN critic_reason TEXT"),
+    ("answer", "ALTER TABLE queries ADD COLUMN answer TEXT"),
 ]
 
 
@@ -151,6 +153,7 @@ def log_query(
         guards = resp.get("guards") or []
         rerank = resp.get("rerank") or {}
         critique = resp.get("critique") or {}
+        reply = resp.get("reply")  # final answer text (post-critic); None on error path
 
         blocked = bool(resp.get("blocked"))
         blocked_reason = resp.get("blocked_reason") or (error if status == "error" else None)
@@ -212,6 +215,9 @@ def log_query(
             # Free text that can echo answer/source content → encrypt at rest like
             # `query`/`detail`. None when no critic ran or it gave no reason.
             kb_crypto.encrypt_text(critique["reason"]) if critique and critique.get("reason") else None,
+            # Answer free text can echo KB/source content → encrypt at rest like
+            # query/critic_reason. None when no answer was produced (blocked/error).
+            kb_crypto.encrypt_text(reply) if reply else None,
             kb_crypto.encrypt_text(detail),
         )
         conn = _connect()
@@ -221,8 +227,8 @@ def log_query(
                    (ts, query, profile, model, latency_ms, status, blocked,
                     blocked_reason, gate, intent, product, top_score, avg_score,
                     n_retrieved, n_passed, top_source, rerank_kept, rerank_total,
-                    critic_verdict, critic_revised, critic_reason, detail)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    critic_verdict, critic_revised, critic_reason, answer, detail)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 row,
             )
             conn.commit()
@@ -431,27 +437,63 @@ def fetch_stats(days: int = 7) -> dict:
         conn.close()
 
 
-def fetch_recent(limit: int = 50, offset: int = 0) -> list[dict]:
-    """Most-recent queries first, for the dashboard's history table."""
+# Columns pulled for the history table (and the free-text search over it).
+_RECENT_COLUMNS = """id, ts, query, profile, model, latency_ms, status, blocked,
+                     blocked_reason, gate, intent, product, top_score, n_retrieved,
+                     n_passed, critic_verdict, critic_reason, answer"""
+
+
+def _decode_recent_row(r) -> dict:
+    """Decrypt + humanize one history row for display: query / answer /
+    critic_reason are encrypted at rest, product_id maps to a readable name.
+    Shared by fetch_recent's plain and search paths so both stay consistent."""
+    d = dict(r)
+    q = _safe_decrypt(d.get("query") or "")
+    d["query"] = _LOCKED_LABEL if q is None else q  # at-rest decrypt; placeholder if unreadable
+    d["product"] = display_name(d.get("product"))  # product_id → readable name
+    if d.get("answer"):  # encrypted free text → decrypt (old rows have none: stay "")
+        a = _safe_decrypt(d["answer"])
+        d["answer"] = _LOCKED_LABEL if a is None else a
+    else:
+        d["answer"] = ""
+    if d.get("critic_reason"):  # encrypted free text → decrypt for the history view
+        cr = _safe_decrypt(d["critic_reason"])
+        d["critic_reason"] = _LOCKED_LABEL if cr is None else cr
+    return d
+
+
+def fetch_recent(limit: int = 50, offset: int = 0, search: str = "") -> list[dict]:
+    """Most-recent queries first, for the dashboard's history table.
+
+    With `search`, filter to rows whose question / answer / product / intent /
+    status / gate contain the term (case-insensitive). Question and answer text
+    are encrypted at rest, so a SQL LIKE can't match them — we scan newest-first,
+    decrypt, and filter in Python, then paginate the matches. At booth scale
+    (hundreds–low thousands of rows) that full scan is the same order of work
+    fetch_stats already does every load."""
     conn = _connect()
     try:
-        rows = conn.execute(
-            """SELECT id, ts, query, profile, model, latency_ms, status, blocked,
-                      blocked_reason, gate, intent, product, top_score, n_retrieved,
-                      n_passed, critic_verdict, critic_reason
-               FROM queries ORDER BY id DESC LIMIT ? OFFSET ?""",
-            (int(limit), int(offset)),
-        ).fetchall()
-        out = []
-        for r in rows:
-            d = dict(r)
-            q = _safe_decrypt(d.get("query") or "")
-            d["query"] = _LOCKED_LABEL if q is None else q  # at-rest decrypt; placeholder if unreadable
-            d["product"] = display_name(d.get("product"))  # product_id → readable name
-            if d.get("critic_reason"):  # encrypted free text → decrypt for the history view
-                cr = _safe_decrypt(d["critic_reason"])
-                d["critic_reason"] = _LOCKED_LABEL if cr is None else cr
+        term = (search or "").strip().lower()
+        if not term:
+            rows = conn.execute(
+                f"SELECT {_RECENT_COLUMNS} FROM queries ORDER BY id DESC LIMIT ? OFFSET ?",
+                (int(limit), int(offset)),
+            ).fetchall()
+            return [_decode_recent_row(r) for r in rows]
+
+        out, skipped = [], 0
+        for r in conn.execute(f"SELECT {_RECENT_COLUMNS} FROM queries ORDER BY id DESC"):
+            d = _decode_recent_row(r)
+            hay = " ".join(str(d.get(k) or "") for k in
+                           ("query", "answer", "product", "intent", "status", "gate", "blocked_reason")).lower()
+            if term not in hay:
+                continue
+            if skipped < int(offset):  # honor offset over the filtered result set
+                skipped += 1
+                continue
             out.append(d)
+            if len(out) >= int(limit):
+                break
         return out
     finally:
         conn.close()
@@ -463,7 +505,7 @@ EXPORT_COLUMNS = [
     "id", "ts", "query", "profile", "model", "intent", "product",
     "status", "blocked", "blocked_reason", "gate",
     "top_score", "n_retrieved", "n_passed", "top_source",
-    "rerank_kept", "rerank_total", "critic_verdict", "critic_reason", "latency_ms",
+    "rerank_kept", "rerank_total", "critic_verdict", "critic_reason", "answer", "latency_ms",
 ]
 
 
@@ -490,7 +532,75 @@ def fetch_all(days: int = 0) -> list[dict]:
             if d.get("critic_reason"):  # encrypted free text → decrypt for the audit export
                 cr = _safe_decrypt(d["critic_reason"])
                 d["critic_reason"] = _LOCKED_LABEL if cr is None else cr
+            if d.get("answer"):  # encrypted answer text → decrypt for the audit export
+                a = _safe_decrypt(d["answer"])
+                d["answer"] = _LOCKED_LABEL if a is None else a
             out.append(d)
         return out
+    finally:
+        conn.close()
+
+
+# ── Read-only SQL console (self-diagnosis) ──────────────────────────
+#
+# Operators want ad-hoc SQL filtering for diagnosis ("show me every errored
+# turn", "answered questions with weak retrieval", ...). We can't run their SQL
+# against data/queries.db directly: query/answer/critic_reason are encrypted at
+# rest, so a WHERE/GROUP BY on that text would match ciphertext. Instead each
+# request builds a DECRYPTED, in-memory snapshot (the same `queries` table the
+# CSV/DB export produces) and runs the statement there. Because that snapshot is
+# a disposable copy, no statement can ever touch the real store — and we also
+# hard-enforce read-only below so the console can't even mutate the copy.
+
+_SQL_ROW_CAP = 1000
+
+# The only sqlite authorizer actions a read-only query needs. Anything else —
+# writes, ATTACH, PRAGMA, transactions — is denied at compile time, so the
+# console can't read other files or escape the snapshot.
+_SQL_READONLY_ACTIONS = frozenset({
+    sqlite3.SQLITE_SELECT, sqlite3.SQLITE_READ, sqlite3.SQLITE_FUNCTION,
+    getattr(sqlite3, "SQLITE_RECURSIVE", -1),  # WITH RECURSIVE (py>=3.11)
+})
+
+
+def _sql_readonly_authorizer(action, _a1, _a2, _db, _src):
+    return sqlite3.SQLITE_OK if action in _SQL_READONLY_ACTIONS else sqlite3.SQLITE_DENY
+
+
+def run_readonly_sql(sql: str, row_cap: int = _SQL_ROW_CAP) -> dict:
+    """Run one read-only SELECT/WITH against a decrypted in-memory snapshot of
+    the query log. Returns {columns, rows, row_count, truncated} or {error}.
+
+    Table name is `queries`; columns are EXPORT_COLUMNS (same as the exports).
+    Single statement only; SELECT/WITH only; results capped at `row_cap`."""
+    stmt = (sql or "").strip().rstrip(";").strip()
+    if not stmt:
+        return {"error": "空查詢"}
+    if ";" in stmt:  # single statement only — no stacked queries
+        return {"error": "一次只能執行一條查詢（偵測到分號分隔的多條語句）"}
+    head = stmt.lstrip("(").split(None, 1)[0].lower() if stmt.strip() else ""
+    if head not in ("select", "with"):
+        return {"error": "只允許 SELECT / WITH 查詢（唯讀）"}
+
+    conn = sqlite3.connect(":memory:")
+    try:
+        cols_ddl = ", ".join(f'"{c}"' for c in EXPORT_COLUMNS)
+        conn.execute(f"CREATE TABLE queries ({cols_ddl})")
+        placeholders = ",".join("?" for _ in EXPORT_COLUMNS)
+        conn.executemany(
+            f"INSERT INTO queries VALUES ({placeholders})",
+            ([row.get(c) for c in EXPORT_COLUMNS] for row in fetch_all(days=0)),
+        )
+        # Enforce read-only only AFTER our own snapshot writes are done.
+        conn.set_authorizer(_sql_readonly_authorizer)
+        cur = conn.execute(stmt)
+        columns = [d[0] for d in cur.description] if cur.description else []
+        fetched = cur.fetchmany(row_cap + 1)  # +1 to detect truncation
+        truncated = len(fetched) > row_cap
+        rows = [list(r) for r in fetched[:row_cap]]
+        return {"columns": columns, "rows": rows,
+                "row_count": len(rows), "truncated": truncated}
+    except sqlite3.Error as e:
+        return {"error": str(e)}
     finally:
         conn.close()
